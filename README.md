@@ -1,5 +1,11 @@
 # Spotify RAM Optimizer
 
+**Spotify Optimizer — Take Control of Your Spotify Performance.**
+
+Monitor, manage, and optimize Spotify on Windows with a powerful desktop utility built for performance, control, and reliability.
+
+*Designed and developed by **Icey**.*
+
 A lightweight Windows utility for optimizing background resource usage of Spotify Desktop and Microsoft Store editions. It applies reversible, user-selected settings and safe cache cleaning while keeping login credentials, playlists, and offline media untouched.
 
 ---
@@ -109,6 +115,12 @@ The output executable is generated at `release/SpotifyOptimizer.exe`.
 - `release/`: Production standalone Windows binary.
 - `docs/`: Release notes, documentation, and interface screenshots.
 - `main.py`: Application entry point and smoke-test CLI.
+
+---
+
+## Author & Credits
+
+Designed and developed by **Icey** ([@Icey067](https://github.com/Icey067)).
 
 ---
 

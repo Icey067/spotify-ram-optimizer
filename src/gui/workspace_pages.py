@@ -387,6 +387,8 @@ class AboutPanel(ctk.CTkScrollableFrame):
                      font=ctk.CTkFont(size=22, weight="bold")).pack(anchor="w", padx=20, pady=(20, 2))
         ctk.CTkLabel(card, text="Version 1.0.0 (Windows Desktop Release)", text_color=ACCENT,
                      font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w", padx=20)
+        ctk.CTkLabel(card, text="Designed and developed by Icey", text_color=MUTED,
+                     font=ctk.CTkFont(size=12)).pack(anchor="w", padx=20, pady=(2, 0))
         ctk.CTkLabel(
             card,
             text="A clean, non-invasive Windows desktop utility designed to reduce Spotify's background memory "
