@@ -19,6 +19,13 @@ available.
 - Provides seven workspace pages: Dashboard, Optimizations, Performance,
   Backups & Restore, Activity Logs, Settings, and About.
 
+## Download standalone executable
+
+You do not need Python or development tools to run the application. Download the pre-built portable binary directly from the official release:
+
+- **[Download SpotifyOptimizer.exe (v1.0.0)](https://github.com/Icey067/spotify-ram-optimizer/releases/download/v1.0.0/SpotifyOptimizer.exe)**
+- **[All Releases & Changelog](https://github.com/Icey067/spotify-ram-optimizer/releases)**
+
 ## Requirements
 
 - Windows 10 or Windows 11
