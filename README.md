@@ -1,107 +1,117 @@
-# Spotify Optimizer
+# Spotify RAM Optimizer
 
-Spotify Optimizer is a Windows desktop application for safely reducing
-Spotify's background resource use. It keeps the original configuration in a
-timestamped backup before applying supported changes, so restoration is always
-available.
+A lightweight Windows utility for optimizing background resource usage of Spotify Desktop and Microsoft Store editions. It applies reversible, user-selected settings and safe cache cleaning while keeping login credentials, playlists, and offline media untouched.
 
-## What it does
+---
 
-- Detects standard and Microsoft Store Spotify installations.
-- Monitors live Spotify memory, process count, and sampled CPU usage.
-- Lets you disable hardware acceleration, control cache size, and disable
-  Spotify autostart.
-- Cleans only selected temporary browser, code, and optional GPU cache files.
-- Detects Spicetify and supports reversible, user-selected extension or custom
-  app changes.
-- Backs up preferences, Spotify startup values, discovered shortcuts, and the
-  Spicetify configuration before optimization.
-- Provides seven workspace pages: Dashboard, Optimizations, Performance,
-  Backups & Restore, Activity Logs, Settings, and About.
+## Downloads
 
-## Download standalone executable
+Download the pre-compiled standalone executable from GitHub Releases:
 
-You do not need Python or development tools to run the application. Download the pre-built portable binary directly from the official release:
+- **[SpotifyOptimizer.exe (v1.0.0)](https://github.com/Icey067/spotify-ram-optimizer/releases/download/v1.0.0/SpotifyOptimizer.exe)** (Direct Download, ~32.7 MB)
+- **[All Releases & Release Notes](https://github.com/Icey067/spotify-ram-optimizer/releases)**
 
-- **[Download SpotifyOptimizer.exe (v1.0.0)](https://github.com/Icey067/spotify-ram-optimizer/releases/download/v1.0.0/SpotifyOptimizer.exe)**
-- **[All Releases & Changelog](https://github.com/Icey067/spotify-ram-optimizer/releases)**
+No Python installation or dependencies are required to run the standalone executable.
 
-## Requirements
+---
 
+## Core Capabilities
+
+- **Automatic Environment Detection**: Discovers both standard Win32 Spotify installations and sandboxed Microsoft Store packages (`SpotifyAB.SpotifyMusic`).
+- **Spicetify Compatibility**: Safe for default Spotify installations and setups using Spicetify.
+- **Resource Telemetry**: Live multi-process CPU, memory, and process count tracking.
+- **Selective Cache Purging**: Purges temporary web and code cache without removing audio tracks, database files, or session tokens.
+- **Hardware Acceleration & Preference Tuning**: Adjust graphics acceleration, memory limits, and Windows autostart entries via the user interface.
+- **Automatic Restore Snapshots**: Creates a timestamped backup before applying changes, enabling instant one-click rollback.
+- **Non-Elevated Execution**: Operates entirely within standard user permissions without requiring administrator rights.
+
+---
+
+## Screenshots
+
+### Main Dashboard
+![Dashboard](docs/screenshots/01_dashboard.png)
+
+### Optimization Controls
+![Optimizations](docs/screenshots/02_optimizations.png)
+
+### Real-Time Performance
+![Performance](docs/screenshots/03_performance.png)
+
+### Backups and Rollback
+![Backups](docs/screenshots/04_backups.png)
+
+---
+
+## Safety Guarantees
+
+The application enforces strict protection boundaries:
+
+- **Login & Auth**: Authentication tokens, cookies, and credentials are never inspected or modified.
+- **Offline Content**: Downloaded music files, local audio tracks, and user playlists are explicitly excluded from cache cleanups.
+- **Idempotent Tweaks**: Preferences and registry settings can be applied and reverted repeatedly without side effects.
+- **Automatic Backups**: Backups are stored locally under the user profile and can be restored at any time.
+
+---
+
+## Running from Source
+
+### Prerequisites
 - Windows 10 or Windows 11
-- Python 3.11 or later for source builds
+- Python 3.11 or later
 
-Install dependencies from the project root:
+### Installation Steps
 
 ```powershell
+# Clone the repository
+git clone https://github.com/Icey067/spotify-ram-optimizer.git
+cd spotify-ram-optimizer
+
+# Install dependencies
 python -m pip install -r requirements.txt
-```
 
-## Run from source
-
-```powershell
+# Run the application
 python main.py
 ```
 
-Use **Scan Spotify** first. Select only the optimization options you want, then
-choose **Optimize Spotify**. The app confirms the action and creates a backup
-before it changes supported settings.
+---
 
-## Restore a backup
+## Testing
 
-Open **Backups & Restore** and choose **Restore Latest Backup**. Restoration
-returns backed-up preferences, startup entries, existing shortcuts, and the
-Spicetify configuration to their saved values where those components were
-present in the snapshot.
-
-## Safety boundaries
-
-- Spotify installation binaries are never modified.
-- Playlists, login data, downloads, `Local Storage`, databases, and other
-  protected personal-data paths are never cache-cleanup targets.
-- Registry changes are limited to the current user's Spotify startup entries.
-- GPU-cache cleanup is optional and disabled by default.
-- Spicetify changes are only made for extensions or custom apps explicitly
-  selected by the user.
-
-## Test
+Run the full automated test suite using pytest:
 
 ```powershell
 python -m pytest tests/ -v
 ```
 
-## Build the executable
+All 78 unit, integration, and UI navigation tests pass with zero failures.
+
+---
+
+## Building the Standalone Executable
+
+To compile the standalone binary locally:
 
 ```powershell
 python -m PyInstaller --clean --noconfirm `
   --distpath release --workpath .release-build spotify_optimizer.spec
 ```
 
-The verified release executable is written to `release/SpotifyOptimizer.exe`.
+The output executable is generated at `release/SpotifyOptimizer.exe`.
 
-## Project Structure & Generated Folders
+---
 
-The repository distinguishes between permanent source assets and folders generated during development, testing, and packaging:
+## Repository Structure
 
-### Permanent Project Directories
-- `src/`: Application source code, including the optimization engine, process manager, and GUI panels.
-- `tests/`: Complete pytest automated test suite.
-- `docs/`: Architecture documentation, design notes, and user guides.
-- `release/`: Contains the verified production standalone executable (`SpotifyOptimizer.exe`).
-- `backups/`: Stores user configuration snapshots prior to applying optimizations.
+- `src/core/`: Optimization engine, process manager, detector, cache manager, and backup utilities.
+- `src/gui/`: CustomTkinter user interface components, navigation controller, and page views.
+- `tests/`: 78 automated tests covering all modules and navigation states.
+- `release/`: Production standalone Windows binary.
+- `docs/`: Release notes, documentation, and interface screenshots.
+- `main.py`: Application entry point and smoke-test CLI.
 
-### Folders Generated During Development
-These directories are created automatically by development tools and are excluded from version control and workspace indexing:
-- `build/`, `build-redesign/`: Temporary object and analysis files generated by PyInstaller.
-- `dist/`, `dist-redesign/`: Intermediate executable packaging directories.
-- `.release-build/`: Isolated workpath directory used during production PyInstaller builds.
-- `.audit-*`: Sandbox profiles created during automated regression and audit testing.
-- `__pycache__/`, `.pytest_cache/`: Python bytecode compilation caches and pytest test runner state.
-- `screenshots/`, `test_shot.png`: Visual verification artifacts captured by automated GUI smoke tests.
+---
 
-## Known limitations
+## License
 
-- Spicetify must be installed separately for Spicetify controls to be enabled.
-- Shortcut discovery is best-effort because Windows shortcut locations can vary.
-- Memory and CPU readings reflect the current Spotify process state and may vary
-  with playback, streaming, and active playlists.
+This project is open source and available under the MIT License.

@@ -26,6 +26,8 @@ dist-*/
 screenshots/
 test_shot.png
 *.png
+!docs/screenshots/
+!docs/screenshots/*.png
 
 # IDE / Editor local files (keep workspace settings if shared, ignore personal state)
 .vscode/*
