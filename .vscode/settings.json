@@ -1,0 +1,36 @@
+{
+  "files.exclude": {
+    "**/.git": true,
+    "**/.pytest_cache": true,
+    "**/.release-build": true,
+    "**/.audit-*": true,
+    "**/__pycache__": true,
+    "build": true,
+    "build-*": true,
+    "dist": true,
+    "dist-*": true,
+    "screenshots": true,
+    "test_shot.png": true
+  },
+  "search.exclude": {
+    "**/.pytest_cache": true,
+    "**/.release-build": true,
+    "**/.audit-*": true,
+    "**/__pycache__": true,
+    "build": true,
+    "build-*": true,
+    "dist": true,
+    "dist-*": true,
+    "screenshots": true
+  },
+  "python.analysis.exclude": [
+    "**/.pytest_cache",
+    "**/.release-build",
+    "**/.audit-*",
+    "build",
+    "build-*",
+    "dist",
+    "dist-*",
+    "release"
+  ]
+}

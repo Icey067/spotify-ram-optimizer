@@ -1,0 +1,8 @@
+# Runtime dependencies
+customtkinter>=5.2,<6
+Pillow>=10.0
+psutil>=5.9
+pywin32>=306
+
+# Packaging
+pyinstaller>=6.0

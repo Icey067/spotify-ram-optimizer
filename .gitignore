@@ -1,0 +1,41 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# PyInstaller & build outputs
+build/
+build-*/
+dist/
+dist-*/
+.release-build/
+*.spec.bak
+
+# Preserve official release binaries
+!release/
+!release/SpotifyOptimizer.exe
+
+# Audit sandboxes & temporary test profiles
+.audit-*
+
+# Temporary test screenshots & captures
+screenshots/
+test_shot.png
+*.png
+
+# IDE / Editor local files (keep workspace settings if shared, ignore personal state)
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Environment & local config overrides
+.env
+.venv/
+env/
+venv/
