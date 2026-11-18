@@ -19,9 +19,14 @@ from .components import SidebarButton
 PAGE_METADATA: dict[str, tuple[str, str]] = {
     "Dashboard": ("Dashboard", "Overview of your Spotify setup and resource health"),
     "Optimizations": ("Optimizations", "Configure and run targeted Spotify resource optimizations"),
+    "Diagnostics": ("Diagnostics", "Evidence-backed health findings and exportable reports"),
     "Performance": ("Performance", "Live Spotify memory, process counts, and history"),
+    "Processes": ("Processes", "The Spotify process tree, read from the OS on demand"),
     "Backups": ("Backups & Restore", "Protected configuration snapshots and rollback controls"),
+    "Startup": ("Startup", "Windows startup entries, backed up before any change"),
+    "Installation": ("Installation", "Detected installation, real paths, and compatibility"),
     "Activity": ("Activity Logs", "Live operation records, filtering, and export tools"),
+    "Privacy": ("Privacy Center", "Exactly what is read, changed, stored and retained"),
     "Settings": ("Settings", "Workspace preferences and application configuration"),
     "About": ("About", "Product information, version details, and documentation"),
 }

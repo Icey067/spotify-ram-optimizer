@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q main.py src
+
+      - name: Run test suite
+        run: python -m pytest tests -q
+
+      - name: Run application smoke test
+        run: python main.py --smoke-test
+
+  package:
+    name: Build and verify executable
+    runs-on: windows-latest
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Build standalone executable
+        run: |
+          python -m PyInstaller --clean --noconfirm `
+            --distpath release --workpath .release-build spotify_optimizer.spec
+
+      - name: Verify executable exists
+        shell: pwsh
+        run: |
+          if (-not (Test-Path .\release\SpotifyOptimizer.exe)) {
+            Write-Error "Executable was not produced"
+            exit 1
+          }
+          Get-Item .\release\SpotifyOptimizer.exe | Select-Object Name, Length
+
+      - name: Smoke-test the packaged executable
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath .\release\SpotifyOptimizer.exe `
+            -ArgumentList '--smoke-test' -Wait -PassThru
+          Write-Host "Smoke test exit code: $($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { exit 1 }
+
+      - name: Record checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash .\release\SpotifyOptimizer.exe -Algorithm SHA256).Hash
+          $size = (Get-Item .\release\SpotifyOptimizer.exe).Length
+          "SHA256: $hash" | Tee-Object -FilePath .\release\SpotifyOptimizer.exe.sha256
+          "Size: $size bytes" | Out-File -Append .\release\SpotifyOptimizer.exe.sha256
+          "### Executable`n- SHA256: ``$hash```n- Size: $size bytes" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpotifyOptimizer-windows-x64
+          path: |
+            release/SpotifyOptimizer.exe
+            release/SpotifyOptimizer.exe.sha256
+          if-no-files-found: error

@@ -36,8 +36,20 @@ class ShortcutInfo:
 
 
 def _get_shell():
-    """Return a win32com Shell object or None."""
+    """
+    Return a win32com Shell object, or ``None`` when unavailable.
+
+    COM is initialised per calling thread: the engine runs optimisations on a
+    worker thread, where an uninitialised apartment would make every shortcut
+    operation fail silently.
+    """
     try:
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            # Already initialised or COM unavailable; Dispatch below decides.
+            pass
         import win32com.client
         return win32com.client.Dispatch("WScript.Shell")
     except Exception:

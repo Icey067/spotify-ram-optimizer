@@ -1,11 +1,14 @@
 """Reusable, framework-native building blocks for the desktop workspace."""
 from __future__ import annotations
 
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Optional
 
 import customtkinter as ctk
 
-from .theme import ACCENT, ACCENT_HOVER, BORDER, MUTED, SUBTLE, SURFACE, SURFACE_RAISED, TEXT
+from .theme import (
+    ACCENT, ACCENT_HOVER, BORDER, ERROR, MUTED, SUBTLE, SUCCESS, SURFACE,
+    SURFACE_RAISED, TEXT, WARNING,
+)
 
 
 class SectionCard(ctk.CTkFrame):
@@ -67,12 +70,13 @@ class MetricCard(SectionCard):
 
 class MemoryChart(SectionCard):
     """A small Canvas chart that renders only measurements supplied by the app."""
-    def __init__(self, master, **kwargs) -> None:
+    def __init__(self, master, title: str = "MEMORY HISTORY", **kwargs) -> None:
         super().__init__(master, **kwargs)
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)
-        ctk.CTkLabel(self, text="MEMORY HISTORY", text_color=MUTED,
-                     font=ctk.CTkFont(size=10, weight="bold")).grid(row=0, column=0, padx=16, pady=(14, 0), sticky="w")
+        ctk.CTkLabel(self, text=title, text_color=MUTED,
+                     font=ctk.CTkFont(size=10, weight="bold")).grid(
+                         row=0, column=0, padx=16, pady=(14, 0), sticky="w")
         self.canvas = ctk.CTkCanvas(self, bg=SURFACE, highlightthickness=0, height=160)
         self.canvas.grid(row=1, column=0, sticky="nsew", padx=10, pady=(6, 10))
         self._values: list[float] = []
@@ -80,7 +84,7 @@ class MemoryChart(SectionCard):
         self._render_chart()
 
     def set_values(self, values: Iterable[float]) -> None:
-        self._values = list(values)[-36:]
+        self._values = list(values)[-60:]
         self._render_chart()
 
     def _render_chart(self) -> None:
@@ -89,32 +93,119 @@ class MemoryChart(SectionCard):
         width = max(canvas.winfo_width(), 250)
         height = max(canvas.winfo_height(), 130)
         if len(self._values) < 2:
-            canvas.create_text(width / 2, height / 2 - 8, text="Waiting for memory readings", fill=MUTED,
+            canvas.create_text(width / 2, height / 2 - 8,
+                               text="Waiting for memory readings", fill=MUTED,
                                font=("Segoe UI", 12, "bold"))
-            canvas.create_text(width / 2, height / 2 + 15, text="Keep Spotify open to collect a history.", fill=SUBTLE,
+            canvas.create_text(width / 2, height / 2 + 15,
+                               text="Keep Spotify open to collect a history.", fill=SUBTLE,
                                font=("Segoe UI", 10))
             return
         low, high = min(self._values), max(self._values)
         padding_x, padding_y = 15, 22
         span = max(high - low, 1.0)
         points = []
-        for i, value in enumerate(self._values):
-            x = padding_x + i * (width - padding_x * 2) / (len(self._values) - 1)
+        for index, value in enumerate(self._values):
+            x = padding_x + index * (width - padding_x * 2) / (len(self._values) - 1)
             y = height - padding_y - ((value - low) / span) * (height - padding_y * 2)
             points.extend((x, y))
         for y in (padding_y, height / 2, height - padding_y):
             canvas.create_line(padding_x, y, width - padding_x, y, fill=BORDER, dash=(2, 4))
         canvas.create_line(*points, fill=ACCENT, width=2, smooth=True)
-        canvas.create_text(padding_x, 8, text=f"{high:.1f} MB", fill=MUTED, anchor="w", font=("Segoe UI", 9))
-        canvas.create_text(padding_x, height - 7, text=f"{low:.1f} MB", fill=MUTED, anchor="w", font=("Segoe UI", 9))
+        canvas.create_text(padding_x, 8, text=f"{high:.1f} MB", fill=MUTED, anchor="w",
+                           font=("Segoe UI", 9))
+        canvas.create_text(padding_x, height - 7, text=f"{low:.1f} MB", fill=MUTED,
+                           anchor="w", font=("Segoe UI", 9))
 
 
 class SidebarButton(ctk.CTkButton):
-    def __init__(self, master, label: str, command: Callable, **kwargs) -> None:
-        super().__init__(master, text=label, command=command, anchor="w", height=38,
+    def __init__(self, master, label: str, command: Callable, height: int = 38,
+                 **kwargs) -> None:
+        super().__init__(master, text=label, command=command, anchor="w", height=height,
                          corner_radius=8, fg_color="transparent", hover_color="#202731",
-                         text_color=MUTED, font=ctk.CTkFont(family="Segoe UI", size=13), **kwargs)
+                         text_color=MUTED, font=ctk.CTkFont(family="Segoe UI", size=13),
+                         **kwargs)
 
     def set_active(self, active: bool) -> None:
         self.configure(fg_color="#193526" if active else "transparent",
                        text_color=ACCENT if active else MUTED)
+
+
+class PlanPreviewDialog(ctk.CTkToplevel):
+    """
+    Dry-run review window.
+
+    Shows the plan produced by the engine (real files, registry values and
+    cache directories) and lets the user apply it or close without changes.
+    """
+
+    def __init__(self, master, plan, on_apply: Optional[Callable] = None,
+                 subtitle: str = "") -> None:
+        super().__init__(master)
+        self.plan = plan
+        self.on_apply = on_apply
+        self.title("Preview changes")
+        self.geometry("720x560")
+        self.configure(fg_color=SURFACE)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+        self.transient(master)
+
+        header = ctk.CTkFrame(self, fg_color="transparent")
+        header.grid(row=0, column=0, sticky="ew", padx=20, pady=(18, 8))
+        header.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(header, text="Review planned changes", text_color=TEXT,
+                     font=ctk.CTkFont(size=19, weight="bold")).grid(
+                         row=0, column=0, sticky="w")
+        ctk.CTkLabel(header, text=subtitle or plan.summary(), text_color=MUTED,
+                     justify="left", wraplength=650,
+                     font=ctk.CTkFont(size=11)).grid(row=1, column=0, sticky="w", pady=(2, 0))
+
+        body = ctk.CTkTextbox(self, wrap="word", font=ctk.CTkFont(family="Consolas", size=11),
+                              border_width=1, border_color=BORDER)
+        body.grid(row=1, column=0, sticky="nsew", padx=20, pady=6)
+        self.body = body
+
+        lines = plan.describe()
+        files = plan.files_to_modify
+        if files:
+            lines.append("")
+            lines.append("Files that will be written:")
+            lines.extend(f"  {path}" for path in files)
+        if plan.backup_targets:
+            lines.append("")
+            lines.append("Files included in the backup:")
+            lines.extend(f"  {path}" for path in plan.backup_targets)
+        if plan.cache_directories:
+            lines.append("")
+            lines.append("Cache directories whose contents will be removed:")
+            lines.extend(f"  {path}" for path in plan.cache_directories)
+        if plan.requires_spotify_closed:
+            lines.append("")
+            lines.append("Spotify will be closed before these changes are applied.")
+        if plan.requires_restart:
+            lines.append("Spotify must be restarted for the settings to take effect.")
+        lines.append("")
+        lines.append("A timestamped, hash-verified backup is created first.")
+        body.insert("1.0", "\n".join(lines))
+        body.configure(state="disabled")
+
+        footer = ctk.CTkFrame(self, fg_color="transparent")
+        footer.grid(row=2, column=0, sticky="ew", padx=20, pady=(6, 16))
+        footer.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(footer, text="Nothing has been changed yet.", text_color=SUBTLE,
+                     font=ctk.CTkFont(size=10)).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkButton(footer, text="Close", width=90, height=32, fg_color="#27303B",
+                      hover_color="#333E4C", command=self.destroy).grid(
+                          row=0, column=1, padx=(0, 8))
+        if on_apply and not plan.is_empty():
+            ctk.CTkButton(footer, text="Apply changes", width=130, height=32,
+                          fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color="#08120C",
+                          font=ctk.CTkFont(size=12, weight="bold"),
+                          command=self._apply).grid(row=0, column=2)
+
+    def _apply(self) -> None:
+        callback = self.on_apply
+        self.destroy()
+        if callback:
+            callback()

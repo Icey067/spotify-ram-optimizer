@@ -19,6 +19,9 @@ dist-*/
 !release/
 !release/SpotifyOptimizer.exe
 
+# Locally retained previous builds (kept on disk, not committed)
+release/SpotifyOptimizer-*.exe
+
 # Audit sandboxes & temporary test profiles
 .audit-*
 
@@ -28,6 +31,9 @@ test_shot.png
 *.png
 !docs/screenshots/
 !docs/screenshots/*.png
+!assets/
+!assets/*.png
+!assets/*.ico
 
 # IDE / Editor local files (keep workspace settings if shared, ignore personal state)
 .vscode/*
@@ -38,6 +44,23 @@ test_shot.png
 
 # Environment & local config overrides
 .env
+.env.*
+!.env.example
 .venv/
 env/
 venv/
+
+# Local user data — never committed
+backups/*
+!backups/.gitkeep
+*.sqlite
+*.sqlite3
+*.db
+*.log
+*.prof
+*.tmp
+*.temp
+
+# Release binaries belong in GitHub Releases, not source history
+release/*.exe
+!release/SHA256SUMS.txt

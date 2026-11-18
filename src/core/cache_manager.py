@@ -1,41 +1,68 @@
 """
-Cache cleanup module.
+Cache inspection and selective cleanup.
 
-Cleans Spotify's Chromium-based cache directories safely.
-Never deletes personal data (playlists, downloads, login info).
+Spotify is a Chromium-based application, so it keeps a handful of disposable
+caches (HTTP cache, compiled JS cache, shader cache).  This module can report
+their size and remove only those directories.
 
-Safe-to-clean directories inside Spotify's cache root:
-  - Cache / Cache_Data          (browser tile / HTTP cache)
-  - Code Cache                  (compiled JavaScript)
-  - GPUCache                    (GPU shader cache)
-  - blob_storage/*              (temporary blobs, usually safe)
-  - Service Worker/CacheStorage (service worker cache)
+Hard safety rules
+-----------------
+1. Only a fixed allow-list of relative paths is ever considered.
+2. The resolved target must be inside the resolved cache root
+   (defeats ``..`` segments, symlinks and junctions pointing elsewhere).
+3. Symlinked/junctioned cache directories are reported but never traversed.
+4. Personal data directories (login data, cookies, local storage, IndexedDB,
+   databases, downloads, user prefs) are protected by name **and** by never
+   appearing in the allow-list.
+5. The cache root itself is never deleted.
 """
 from __future__ import annotations
 
 import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
+from .app_paths import is_within
 from .logger import get_logger
 
 log = get_logger("cache")
 
-# Sub-paths that are safe to clean, relative to the Spotify Data root
+# Grouped allow-list: group id -> relative directories that are disposable.
+CACHE_GROUPS: dict[str, tuple[str, ...]] = {
+    "browser": (
+        "Cache",
+        "Cache_Data",
+        "blob_storage",
+        Path("Service Worker") / "CacheStorage",
+        Path("Service Worker") / "ScriptCache",
+    ),
+    "code": ("Code Cache",),
+    "gpu": ("GPUCache",),
+}
+
+GROUP_LABELS: dict[str, str] = {
+    "browser": "Web and network cache",
+    "code": "Compiled code cache",
+    "gpu": "GPU shader cache",
+}
+
+GROUP_DESCRIPTIONS: dict[str, str] = {
+    "browser": "HTTP tiles and service-worker blobs. Spotify re-downloads them as needed.",
+    "code": "Compiled JavaScript bytecode. Regenerated on next start.",
+    "gpu": "Shader programs. Regenerated on next start; safe but causes a brief "
+           "re-compile on first launch.",
+}
+
 SAFE_CACHE_SUBPATHS = [
-    "Cache",
-    "Cache_Data",
-    "Code Cache",
-    "GPUCache",
-    "blob_storage",
-    Path("Service Worker") / "CacheStorage",
-    Path("Service Worker") / "ScriptCache",
+    str(relative)
+    for relatives in CACHE_GROUPS.values()
+    for relative in relatives
 ]
 
-# Paths that must NEVER be deleted
-PROTECTED_PATHS = {
+# Names that must never be removed, regardless of allow-list mistakes.
+PROTECTED_PATHS = frozenset({
     "prefs",
     "spotify_prefs",
     "Users",
@@ -43,13 +70,20 @@ PROTECTED_PATHS = {
     "Downloads",
     ".lock",
     "Local Storage",
+    "Session Storage",
     "Databases",
     "IndexedDB",
     "cookies",
+    "Cookies",
+    "Network",
     "Login Data",
     "History",
     "Bookmarks",
-}
+    "Preferences",
+    "Local State",
+})
+
+_PROTECTED_LOWER = frozenset(name.lower() for name in PROTECTED_PATHS)
 
 
 @dataclass
@@ -58,11 +92,7 @@ class CacheStats:
     total_bytes_after: int = 0
     files_deleted: int = 0
     dirs_cleaned: int = 0
-    errors: list[str] = None
-
-    def __post_init__(self):
-        if self.errors is None:
-            self.errors = []
+    errors: list[str] = field(default_factory=list)
 
     @property
     def freed_bytes(self) -> int:
@@ -73,33 +103,90 @@ class CacheStats:
         return round(self.freed_bytes / (1024 * 1024), 2)
 
 
+@dataclass(frozen=True)
+class CacheDirInfo:
+    """One inspectable (and possibly removable) cache directory."""
+    group: str
+    relative: str
+    path: Path
+    size_bytes: int
+    file_count: int
+    eligible: bool
+    reason: str = ""
+
+
 class CacheManager:
     def __init__(self, cache_root: Path) -> None:
         """
-        cache_root should be the Spotify Data directory
-        (e.g. %APPDATA%\\Spotify\\Data or %LOCALAPPDATA%\\Spotify\\Storage).
+        ``cache_root`` is the Spotify data/storage directory, e.g.
+        ``%APPDATA%\\Spotify\\Data`` or ``%LOCALAPPDATA%\\Spotify\\Storage``.
         """
-        self.cache_root = cache_root
+        self.cache_root = Path(cache_root)
+
+    # ------------------------------------------------------------------
+    # Inspection
+    # ------------------------------------------------------------------
+
+    def exists(self) -> bool:
+        return self.cache_root.is_dir()
 
     def get_cache_size(self, subpath: Optional[str] = None) -> int:
-        """Return total bytes in the given sub-directory (or entire cache root)."""
+        """Total bytes in ``subpath`` (or the whole cache root)."""
         target = self.cache_root / subpath if subpath else self.cache_root
         if not target.exists():
             return 0
         return _dir_size(target)
 
     def get_safe_cache_dirs(self) -> list[tuple[str, int]]:
-        """
-        Return list of (relative_path, size_bytes) for each safe-to-clean directory.
-        Only returns directories that actually exist.
-        """
-        result = []
-        for rel in SAFE_CACHE_SUBPATHS:
-            full = self.cache_root / rel
-            if full.exists():
-                size = _dir_size(full)
-                result.append((str(rel), size))
+        """Existing allow-listed directories as ``(relative_path, size_bytes)``."""
+        result: list[tuple[str, int]] = []
+        for relative in SAFE_CACHE_SUBPATHS:
+            full = self.cache_root / relative
+            if full.is_dir():
+                result.append((relative, _dir_size(full)))
         return result
+
+    def inventory(self) -> list[CacheDirInfo]:
+        """
+        Describe every allow-listed directory that exists, including whether
+        it is safe to remove and why not when it is not.
+        """
+        items: list[CacheDirInfo] = []
+        for group, relatives in CACHE_GROUPS.items():
+            for relative in relatives:
+                relative_str = str(relative)
+                full = self.cache_root / relative
+                if not full.exists():
+                    continue
+                eligible, reason = self._validate_target(full)
+                items.append(CacheDirInfo(
+                    group=group,
+                    relative=relative_str,
+                    path=full,
+                    size_bytes=_dir_size(full),
+                    file_count=_count_files(full),
+                    eligible=eligible,
+                    reason=reason,
+                ))
+        return items
+
+    def inventory_by_group(self) -> dict[str, list[CacheDirInfo]]:
+        grouped: dict[str, list[CacheDirInfo]] = {group: [] for group in CACHE_GROUPS}
+        for item in self.inventory():
+            grouped[item.group].append(item)
+        return grouped
+
+    def eligible_bytes(self, groups: Iterable[str] | None = None) -> int:
+        wanted = set(groups) if groups is not None else set(CACHE_GROUPS)
+        return sum(
+            item.size_bytes
+            for item in self.inventory()
+            if item.group in wanted and item.eligible
+        )
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
 
     def clean_cache_dirs(
         self,
@@ -107,59 +194,90 @@ class CacheManager:
         clean_code_cache: bool = True,
         clean_gpu_cache: bool = True,
     ) -> CacheStats:
-        """
-        Clean selected cache directories.
-        Returns a CacheStats summary.
-        """
-        stats = CacheStats()
-        stats.total_bytes_before = _dir_size(self.cache_root) if self.cache_root.exists() else 0
-
-        targets: list[Path] = []
+        """Clean the selected cache groups (backwards-compatible API)."""
+        groups: list[str] = []
         if clean_browser_cache:
-            targets += [
-                self.cache_root / "Cache",
-                self.cache_root / "Cache_Data",
-                self.cache_root / "blob_storage",
-                self.cache_root / "Service Worker" / "CacheStorage",
-                self.cache_root / "Service Worker" / "ScriptCache",
-            ]
+            groups.append("browser")
         if clean_code_cache:
-            targets.append(self.cache_root / "Code Cache")
+            groups.append("code")
         if clean_gpu_cache:
-            targets.append(self.cache_root / "GPUCache")
+            groups.append("gpu")
+        return self.clean_groups(groups)
 
-        for target in targets:
-            if not target.exists():
-                continue
-            # Safety check: never clean protected names
-            if target.name in PROTECTED_PATHS:
-                log.warning(f"Refusing to clean protected path: {target}")
-                stats.errors.append(f"Skipped protected: {target.name}")
-                continue
-            # Safety check: must be under known Spotify data directory
-            try:
-                target.relative_to(self.cache_root)
-            except ValueError:
-                log.warning(f"Path escapes cache root, skipping: {target}")
-                continue
+    def clean_groups(self, groups: Iterable[str]) -> CacheStats:
+        """Remove the allow-listed directories inside the selected groups."""
+        stats = CacheStats()
+        if not self.cache_root.exists():
+            log.info(f"Cache root does not exist, nothing to clean: {self.cache_root}")
+            return stats
 
-            log.info(f"Cleaning cache directory: {target}")
-            count_before = stats.files_deleted
-            _clean_directory(target, stats)
-            if stats.files_deleted > count_before:
-                stats.dirs_cleaned += 1
+        stats.total_bytes_before = _dir_size(self.cache_root)
+        wanted = [group for group in groups if group in CACHE_GROUPS]
 
-        stats.total_bytes_after = _dir_size(self.cache_root) if self.cache_root.exists() else 0
+        for group in wanted:
+            for relative in CACHE_GROUPS[group]:
+                target = self.cache_root / relative
+                if not target.is_dir():
+                    continue
+                eligible, reason = self._validate_target(target)
+                if not eligible:
+                    log.warning(f"Refusing to clean cache directory {target}: {reason}")
+                    stats.errors.append(f"Skipped {relative}: {reason}")
+                    continue
+
+                log.info(f"Cleaning cache directory: {target}")
+                before = stats.files_deleted
+                _clean_directory(target, stats)
+                if stats.files_deleted > before:
+                    stats.dirs_cleaned += 1
+
+        stats.total_bytes_after = _dir_size(self.cache_root)
         log.info(
             f"Cache cleanup done: freed {stats.freed_mb} MB, "
-            f"{stats.files_deleted} files deleted, {len(stats.errors)} errors"
+            f"{stats.files_deleted} entries removed, {len(stats.errors)} skipped"
         )
         return stats
+
+    # ------------------------------------------------------------------
+    # Safety
+    # ------------------------------------------------------------------
+
+    def _validate_target(self, target: Path) -> tuple[bool, str]:
+        """Return ``(eligible, reason)`` for a candidate cleanup target."""
+        try:
+            relative = target.relative_to(self.cache_root)
+        except ValueError:
+            return False, "path escapes the cache root"
+
+        for part in relative.parts:
+            if part.lower() in _PROTECTED_LOWER:
+                return False, f"'{part}' is protected personal data"
+
+        if target.is_symlink() or _is_junction(target):
+            return False, "symlink or junction (not traversed)"
+
+        if not is_within(target, self.cache_root):
+            return False, "resolved path escapes the cache root"
+
+        if target.resolve() == self.cache_root.resolve():
+            return False, "cache root itself is never deleted"
+
+        return True, ""
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _is_junction(path: Path) -> bool:
+    checker = getattr(path, "is_junction", None)
+    if checker is None:
+        return False
+    try:
+        return bool(checker())
+    except OSError:
+        return False
+
 
 def _dir_size(path: Path) -> int:
     total = 0
@@ -177,21 +295,41 @@ def _dir_size(path: Path) -> int:
     return total
 
 
-def _clean_directory(directory: Path, stats: CacheStats) -> None:
-    """Remove all files in directory; leave the directory itself."""
+def _count_files(path: Path) -> int:
+    count = 0
     try:
-        for entry in os.scandir(directory):
-            ep = Path(entry.path)
+        for entry in os.scandir(path):
             try:
                 if entry.is_file(follow_symlinks=False):
-                    ep.unlink()
+                    count += 1
+                elif entry.is_dir(follow_symlinks=False):
+                    count += _count_files(Path(entry.path))
+            except (OSError, PermissionError):
+                pass
+    except (OSError, PermissionError):
+        pass
+    return count
+
+
+def _clean_directory(directory: Path, stats: CacheStats) -> None:
+    """Remove the contents of ``directory`` but keep the directory itself."""
+    try:
+        for entry in os.scandir(directory):
+            entry_path = Path(entry.path)
+            try:
+                if entry.is_file(follow_symlinks=False):
+                    entry_path.unlink()
+                    stats.files_deleted += 1
+                elif entry.is_symlink():
+                    # Remove the link, never follow it.
+                    entry_path.unlink()
                     stats.files_deleted += 1
                 elif entry.is_dir(follow_symlinks=False):
-                    shutil.rmtree(ep, ignore_errors=True)
+                    shutil.rmtree(entry_path, ignore_errors=True)
                     stats.files_deleted += 1
-            except Exception as e:
-                stats.errors.append(f"{ep.name}: {e}")
-                log.debug(f"Could not delete {ep}: {e}")
-    except Exception as e:
-        stats.errors.append(f"{directory}: {e}")
-        log.error(f"Could not scan {directory}: {e}")
+            except OSError as exc:
+                stats.errors.append(f"{entry_path.name}: {exc}")
+                log.debug(f"Could not delete {entry_path}: {exc}")
+    except OSError as exc:
+        stats.errors.append(f"{directory}: {exc}")
+        log.error(f"Could not scan {directory}: {exc}")

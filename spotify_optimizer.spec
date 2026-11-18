@@ -15,15 +15,20 @@ ctk_datas = collect_data_files('customtkinter')
 # Collect all submodules of src to ensure nothing is missed
 src_submodules = collect_submodules('src')
 
+# Application icon shipped inside the bundle (window + Explorer).
+app_icon = 'assets/icon.ico'
+
 a = Analysis(
     ['main.py'],
     pathex=[str(Path('.').resolve())],
     binaries=[],
-    datas=ctk_datas,
+    datas=ctk_datas + [(app_icon, 'assets')],
     hiddenimports=[
         'customtkinter',
         'psutil',
+        'sqlite3',
         'winreg',
+        'pythoncom',
         'win32com',
         'win32com.client',
         'pywintypes',
@@ -51,7 +56,9 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    # UPX compression roughly halves the size but is a well-known trigger for
+    # antivirus heuristics on unsigned executables. Size is traded for trust.
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,          # Standard Windows GUI subsystem
@@ -60,5 +67,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=app_icon,
+    version='version_info.txt',
 )

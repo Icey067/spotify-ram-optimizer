@@ -1,5 +1,14 @@
 """
 Spotify RAM Optimizer — Entry Point
+
+Run the GUI::
+
+    python main.py
+
+Verify a build (GUI and packaged executable)::
+
+    python main.py --smoke-test
+    SpotifyOptimizer.exe --smoke-test
 """
 from __future__ import annotations
 
@@ -7,7 +16,10 @@ import ctypes
 import os
 import sys
 import tempfile
+import threading
+import time
 from pathlib import Path
+from typing import Callable
 
 # Ensure UTF-8 output encoding across all Windows console code pages
 os.environ["PYTHONIOENCODING"] = "utf-8"
@@ -22,13 +34,12 @@ if sys.stderr is not None and hasattr(sys.stderr, "reconfigure"):
     except Exception:
         pass
 
-# Ensure the project root is on the path
 _ROOT = Path(__file__).resolve().parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 
-def _ensure_console_streams():
+def _ensure_console_streams() -> None:
     """Ensure standard output and error are available for console logging."""
     if sys.stdout is not None and sys.stderr is not None:
         return
@@ -57,175 +68,311 @@ def _ensure_console_streams():
 
 def run_smoke_test() -> int:
     """
-    Automated self-test and verification of the packaged application.
-    Executes all primary subsystems, navigation destinations, and GUI components headlessly.
-    Returns 0 on success, non-zero on failure.
+    Automated self-test of the packaged application.
+
+    Exercises every subsystem, a dry-run plan, the diagnostics engine, the
+    history store and backup integrity — then verifies a clean shutdown.
+    Returns 0 on success.
     """
     _ensure_console_streams()
-    print("=" * 60)
-    print("SPOTIFY RAM OPTIMIZER -- STANDALONE EXE SMOKE TEST")
+    print("=" * 62)
+    print("SPOTIFY RAM OPTIMIZER -- STANDALONE SMOKE TEST")
     print(f"Frozen executable: {getattr(sys, 'frozen', False)}")
     print(f"Executable path:   {sys.executable}")
     print(f"Python version:    {sys.version.split()[0]}")
-    print("=" * 60)
+    print("=" * 62)
 
     errors: list[str] = []
+    steps: list[tuple[str, Callable[[], None]]] = []
 
-    # 1. Logger verification
-    print("[1/10] Verifying logging subsystem...")
-    try:
-        from src.core.logger import get_logger, get_log_file_path
+    def step(label: str):
+        def decorator(function: Callable[[], None]) -> Callable[[], None]:
+            steps.append((label, function))
+            return function
+        return decorator
+
+    # ------------------------------------------------------------------
+    # Core subsystems
+    # ------------------------------------------------------------------
+
+    @step("Verifying logging subsystem")
+    def _logger() -> None:
+        from src.core.logger import get_log_file_path, get_logger
         log = get_logger("smoke_test")
         log.info("Smoke test logger initiated")
-        log_path = get_log_file_path()
-        print(f"   [OK] Logger initialized, writing to: {log_path}")
-    except Exception as e:
-        errors.append(f"Logger verification failed: {e}")
-        print(f"   [FAIL] Logger failed: {e}")
+        print(f"   [OK] Logger initialized, writing to: {get_log_file_path()}")
 
-    # 2. Spotify detection
-    print("[2/10] Verifying Spotify detection...")
-    try:
+    @step("Verifying Spotify detection")
+    def _detection() -> None:
         from src.core.detector import detect_installation
         install = detect_installation()
-        print(f"   [OK] Detection completed: type={install.install_type.value}, version={install.version}")
+        print(f"   [OK] Detection completed: type={install.install_type.value}, "
+              f"version={install.version}")
         if install.spicetify:
-            print(f"   [OK] Spicetify: installed={install.spicetify.is_installed}, version={install.spicetify.version}")
-    except Exception as e:
-        errors.append(f"Spotify detection failed: {e}")
-        print(f"   [FAIL] Detection failed: {e}")
+            print(f"   [OK] Spicetify: installed={install.spicetify.is_installed}, "
+                  f"version={install.spicetify.version}")
 
-    # 3. Process management
-    print("[3/10] Verifying process manager...")
-    try:
-        from src.core.process_manager import is_spotify_running, get_total_spotify_memory_mb, get_spotify_process_count
-        running = is_spotify_running()
-        count = get_spotify_process_count()
-        mem = get_total_spotify_memory_mb()
-        print(f"   [OK] Process check: running={running}, count={count}, memory={mem} MB")
-    except Exception as e:
-        errors.append(f"Process manager failed: {e}")
-        print(f"   [FAIL] Process manager failed: {e}")
+    @step("Verifying process manager")
+    def _processes() -> None:
+        from src.core.process_manager import (
+            get_spotify_process_count, get_total_spotify_memory_mb, is_spotify_running,
+        )
+        print(f"   [OK] Process check: running={is_spotify_running()}, "
+              f"count={get_spotify_process_count()}, "
+              f"memory={get_total_spotify_memory_mb()} MB")
 
-    # 4. Engine safe handling of missing Spotify
-    print("[4/10] Verifying safe optimization handling without Spotify...")
-    try:
+    @step("Verifying safe handling without a Spotify installation")
+    def _no_installation() -> None:
         from src.core.engine import OptimizationEngine, OptimizationSettings
         with tempfile.TemporaryDirectory() as temp_backup:
-            eng = OptimizationEngine(installation=None, backup_root=Path(temp_backup))
-            res = eng.run_optimization(OptimizationSettings())
-            assert not res.success, "Optimization with None installation should not succeed"
-            assert any("No Spotify installation" in m for m in res.messages), "Expected missing installation message"
-        print("   [OK] Engine safely handles missing Spotify installation")
-    except Exception as e:
-        errors.append(f"Engine missing-Spotify handling failed: {e}")
-        print(f"   [FAIL] Engine missing-Spotify test failed: {e}")
+            engine = OptimizationEngine(installation=None, backup_root=Path(temp_backup))
+            result = engine.run_optimization(OptimizationSettings())
+            assert not result.success
+            assert any("No Spotify installation" in m for m in result.messages)
 
-    # 5. Backup & Restore safe handling of missing backups
-    print("[5/10] Verifying safe restore handling with no backups...")
-    try:
+    @step("Verifying safe restore handling with no backups")
+    def _no_backups() -> None:
+        from src.core.engine import OptimizationEngine
         with tempfile.TemporaryDirectory() as temp_backup:
-            eng = OptimizationEngine(installation=None, backup_root=Path(temp_backup))
-            res = eng.restore_latest()
-            assert not res.success, "Restore without backups should not succeed"
-            assert any("No backups found" in m for m in res.messages), "Expected no backups message"
-        print("   [OK] Engine safely handles empty backup directory")
-    except Exception as e:
-        errors.append(f"Restore safety test failed: {e}")
-        print(f"   [FAIL] Restore safety test failed: {e}")
+            engine = OptimizationEngine(installation=None, backup_root=Path(temp_backup))
+            result = engine.restore_latest()
+            assert not result.success
+            assert any("No backups found" in m for m in result.messages)
 
-    # 6. Performance monitor
-    print("[6/10] Verifying performance monitoring...")
-    try:
-        from src.core.performance_monitor import PerformanceSnapshot, PerformanceComparison
-        snap1 = PerformanceSnapshot.capture("Before")
-        snap2 = PerformanceSnapshot.capture("After")
-        comp = PerformanceComparison(before=snap1, after=snap2, operations_completed=1, operations_skipped=0)
-        rep = comp.report()
-        assert "before_mb" in rep and "after_mb" in rep
-        print(f"   [OK] Performance monitor snapshot: {rep['before_mb']} MB -> {rep['after_mb']} MB")
-    except Exception as e:
-        errors.append(f"Performance monitor failed: {e}")
-        print(f"   [FAIL] Performance monitor failed: {e}")
+    @step("Verifying performance snapshots")
+    def _performance() -> None:
+        from src.core.performance_monitor import PerformanceComparison, PerformanceSnapshot
+        before = PerformanceSnapshot.capture("Before")
+        after = PerformanceSnapshot.capture("After")
+        comparison = PerformanceComparison(before=before, after=after,
+                                           operations_completed=1, operations_skipped=0)
+        report = comparison.report()
+        assert "before_mb" in report and "after_mb" in report
+        assert "comparable" in report
+        print(f"   [OK] Snapshot: {report['before_mb']} MB -> {report['after_mb']} MB "
+              f"(comparable={report['comparable']})")
 
-    # 7. GUI App & Component instantiation
-    print("[7/10] Verifying GUI App, theme, and persistent config...")
-    try:
+    @step("Verifying optimization registry and dry-run planning")
+    def _planning() -> None:
+        from src.core.compatibility import detect_environment
+        from src.core.optimizations import OPERATIONS, build_plan, request_from_settings
+        from src.core.engine import OptimizationSettings
+        from src.core.profiles import validate_profile
+
+        assert len(OPERATIONS) >= 8
+        assert len({op.id for op in OPERATIONS}) == len(OPERATIONS)
+
+        profile = validate_profile({
+            "name": "Smoke profile",
+            "operations": ["cache.browser", "prefs.hardware_acceleration"],
+            "cache_size_mb": 256,
+        })
+        assert profile.operations == ["prefs.hardware_acceleration", "cache.browser"]
+
+        from src.core.detector import detect_installation
+        env = detect_environment(detect_installation())
+        plan = build_plan(request_from_settings(OptimizationSettings()), env)
+        lines = plan.describe()
+        assert isinstance(lines, list) and lines
+        print(f"   [OK] Plan built: {plan.summary()} ({len(lines)} preview line(s))")
+
+    @step("Verifying health-check engine")
+    def _health() -> None:
+        from src.core.diagnostics import run_health_check
+        report = run_health_check(sample_seconds=0.6, include_measurement=False)
+        assert report.status
+        assert isinstance(report.findings, list) and report.findings
+        text = report.to_markdown()
+        assert "Health Report" in text
+        print(f"   [OK] Health check: {report.status} "
+              f"({len(report.findings)} finding(s))")
+
+    @step("Verifying performance history store")
+    def _history() -> None:
+        from src.core.history import HistoryStore
+        with tempfile.TemporaryDirectory() as temp:
+            store = HistoryStore(Path(temp) / "history.db")
+            assert store.available
+            assert store.record_sample(total_mb=123.4, process_count=3,
+                                       spotify_running=True)
+            assert len(store.samples(hours=1)) == 1
+            assert store.record_session(started_at="now", profile="safe",
+                                        operations_completed=1) is not None
+            assert store.stats()["sessions"] == 1
+            assert store.clear_all()
+            assert store.stats() == {"samples": 0, "sessions": 0}
+        print("   [OK] History store records, reads and clears")
+
+    @step("Verifying backup manifest integrity")
+    def _backup_integrity() -> None:
+        from src.core.backup_manager import BackupManager, BackupMetadata
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            prefs = root / "prefs"
+            prefs.write_text("hardware_acceleration_mode_enabled=true\n")
+            manager = BackupManager(root / "backups")
+            session = manager.create_session()
+            assert manager.backup_prefs(session, prefs)
+            manager.write_metadata(session, BackupMetadata(created_at="smoke"))
+            assert manager.write_manifest(session)
+            integrity = manager.verify_integrity(session)
+            assert integrity.ok, integrity.summary()
+            (session / "prefs").write_text("tampered=true\n")
+            assert manager.verify_integrity(session).ok is False
+        print("   [OK] Backup hashes verify, and tampering is detected")
+
+    # ------------------------------------------------------------------
+    # GUI
+    # ------------------------------------------------------------------
+
+    @step("Verifying GUI App, theme, and persistent config")
+    def _gui() -> None:
         from src.gui.app import App
         app = App()
         app.update()
         print("   [OK] App window created and responsive")
 
-        # 8. All 7 Navigation Destinations Verification
-        print("[8/10] Verifying all 7 sidebar navigation destinations...")
-        nav_destinations = [
+        destinations = [
             ("Dashboard", "dashboard"),
             ("Optimizations", "settings_panel"),
+            ("Diagnostics", "diagnostics_panel"),
             ("Performance", "results_panel"),
+            ("Processes", "processes_panel"),
             ("Backups", "backups_panel"),
+            ("Startup", "startup_panel"),
+            ("Installation", "installation_panel"),
             ("Activity", "log_panel"),
+            ("Privacy", "privacy_panel"),
             ("Settings", "app_settings_panel"),
             ("About", "about_panel"),
         ]
-
-        for nav_key, panel_attr in nav_destinations:
-            ok = app.show_page(nav_key)
+        for nav_key, panel_attr in destinations:
+            assert app.show_page(nav_key), f"Failed to navigate to {nav_key}"
             app.update()
-            assert ok, f"Failed to navigate to {nav_key}"
-            assert app.current_page == nav_key, f"current_page mismatch: expected {nav_key}, got {app.current_page}"
-            target_panel = getattr(app, panel_attr)
-            assert target_panel.winfo_ismapped() == 1, f"Expected {panel_attr} to be mapped for {nav_key}"
-            print(f"      ✓ {nav_key} navigation verified (panel visible, header updated)")
+            assert app.current_page == nav_key
+            assert getattr(app, panel_attr).winfo_ismapped() == 1
+            print(f"      - {nav_key} verified (panel visible, header updated)")
 
-        # Verify unmapping: when on Dashboard, other panels must be unmapped
         app.show_page("Dashboard")
         app.update()
         assert app.dashboard.winfo_ismapped() == 1
         assert app.settings_panel.winfo_ismapped() == 0
         assert app.log_panel.winfo_ismapped() == 0
-        print("   [OK] Page isolation verified (inactive panels unmapped, zero frame bleeding)")
+        print("   [OK] Page isolation verified")
 
-        # Test settings retrieval
+        from src.core.process_manager import get_process_details
+        details = get_process_details()
+        app.processes_panel.set_rows(details, 0.0)
+        app.update()
+        print(f"   [OK] Process tree rendered ({len(details)} process(es))")
+
+        entries = app._ensure_engine().startup_entries()
+        assert isinstance(entries, list)
+        app.startup_panel.set_entries(entries)
+        app.update()
+        print(f"   [OK] Startup page rendered ({len(entries)} entry(ies))")
+
+        diagnostics = app.diagnostics_panel
+        app.show_page("Diagnostics")
+        app.update()
+        assert diagnostics.cards["checks"].value.cget("text") == "0"
+        print("   [OK] Diagnostics page renders its empty state")
+
+        privacy = app.privacy_panel
+        app.show_page("Privacy")
+        app.update()
+        context = app._privacy_context()
+        assert context["config"] and context["history"]
+        privacy.set_context(context)
+        app.update()
+        print("   [OK] Privacy Center renders real paths and retention")
+
+        report = app._ensure_engine().installation_report()
+        assert report["install_type"] and "prefs_path" in report
+        app.installation_panel.set_report(report)
+        app.update()
+        print(f"   [OK] Installation report rendered ({report['install_type']})")
+
+        from src.gui.restore_dialog import RestoreDialog
+        dialog = RestoreDialog(
+            app,
+            {
+                "name": "smoke-snapshot",
+                "created_at": "smoke",
+                "artefacts": {"prefs": True, "registry": False,
+                              "shortcuts": False, "spicetify": False},
+                "integrity_ok": True,
+                "has_manifest": True,
+                "integrity_detail": "Integrity verified (1 artefact(s)).",
+            },
+            conflicts={"prefs": "smoke conflict"},
+        )
+        dialog.update()
+        assert dialog.selected_components() == ["prefs"]
+        dialog.destroy()
+        print("   [OK] Selective restore dialog renders components and conflicts")
+
+        dispatched: list[bool] = []
+        worker = threading.Thread(
+            target=lambda: app._safe_after(lambda: dispatched.append(True))
+        )
+        worker.start()
+        worker.join()
+        for _ in range(100):
+            app.update()
+            time.sleep(0.01)
+            if dispatched:
+                break
+        assert dispatched, "worker-thread UI update never reached the Tk thread"
+        print("   [OK] Thread-safe UI dispatch verified")
+
         settings = app.settings_panel.get_settings()
-        assert settings.disable_hw_accel is True
-        print("   [OK] Settings panel configured and default values verified")
+        assert isinstance(settings.disable_hw_accel, bool)
+        assert app.settings_panel.profile in ("safe", "balanced", "advanced", "custom")
+        print(f"   [OK] Optimization settings: profile={app.settings_panel.profile}, "
+              f"hw_accel={settings.disable_hw_accel}")
 
-        # Test log appending without bleeding
         app.log_panel.append("00:00:00", "INFO", "Smoke test log entry")
         app.update()
-        assert app.log_panel.winfo_ismapped() == 0, "Log panel should NOT become mapped by background append"
+        assert app.log_panel.winfo_ismapped() == 0
         print("   [OK] Log panel background update verified (no visual bleeding)")
 
-        # Test results panel
-        app.results_panel.show_comparison(comp)
-        print("   [OK] Results panel comparison rendering verified")
+        from src.core.performance_monitor import PerformanceComparison, PerformanceSnapshot
+        comparison = PerformanceComparison(
+            before=PerformanceSnapshot("now", 2, 500.0, label="Before"),
+            after=PerformanceSnapshot("now", 0, 0.0, label="After"),
+            comparable=False,
+        )
+        app.results_panel.show_comparison(comparison)
+        print("   [OK] Results panel renders a non-comparable measurement honestly")
 
-        # 9. Scan Spotify action
-        print("[9/10] Verifying 'Scan Spotify' action...")
         app._do_scan()
         app._update_dashboard()
         print("   [OK] Dashboard updated with scan results")
 
-        # 10. Clean exit
-        print("[10/10] Verifying clean shutdown...")
         app.quit()
         app.destroy()
         print("   [OK] App destroyed cleanly without crashes")
 
-    except Exception as e:
-        errors.append(f"GUI component test failed: {e}")
-        print(f"   [FAIL] GUI test failed: {e}")
+    total = len(steps)
+    for index, (label, function) in enumerate(steps, start=1):
+        print(f"[{index}/{total}] {label}...")
+        try:
+            function()
+        except Exception as exc:  # noqa: BLE001 - smoke test reports everything
+            errors.append(f"{label}: {exc}")
+            print(f"   [FAIL] {exc}")
 
-    print("=" * 60)
+    print("=" * 62)
     if errors:
         print(f"SMOKE TEST FAILED with {len(errors)} error(s):")
-        for err in errors:
-            print(f"  - {err}")
-        print("=" * 60)
+        for error in errors:
+            print(f"  - {error}")
+        print("=" * 62)
         return 1
 
-    print("SMOKE TEST PASSED: ALL 10 SUBSYSTEMS VERIFIED SUCCESSFULLY")
-    print("=" * 60)
+    print(f"SMOKE TEST PASSED: ALL {total} CHECKS VERIFIED SUCCESSFULLY")
+    print("=" * 62)
     return 0
 
 

@@ -10,9 +10,9 @@ Supports:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -119,19 +119,25 @@ def _detect_store() -> Optional[SpotifyInstallation]:
     # Try known Spotify Store paths
     candidates: list[Path] = []
 
-    # Pattern 1: WindowsApps direct
+    # Pattern 1: WindowsApps direct (usually access-restricted without admin)
     if windows_apps.exists():
-        for item in windows_apps.iterdir():
-            if item.is_dir() and "spotify" in item.name.lower():
-                candidates.append(item)
+        try:
+            for item in windows_apps.iterdir():
+                if item.is_dir() and "spotify" in item.name.lower():
+                    candidates.append(item)
+        except (PermissionError, OSError) as exc:
+            log.debug(f"Access denied scanning {windows_apps}: {exc}")
 
     # Pattern 2: Packages folder
     packages_dir = local_app_data / "Packages"
     if packages_dir.exists():
-        for item in packages_dir.iterdir():
-            if "spotify" in item.name.lower():
-                candidates.append(item / "LocalCache" / "Spotify")
-                candidates.append(item)
+        try:
+            for item in packages_dir.iterdir():
+                if "spotify" in item.name.lower():
+                    candidates.append(item / "LocalCache" / "Spotify")
+                    candidates.append(item)
+        except (PermissionError, OSError) as exc:
+            log.debug(f"Access denied scanning {packages_dir}: {exc}")
 
     # Pattern 3: Program Files (may require elevated access — handle gracefully)
     for pfx in ["PROGRAMFILES", "PROGRAMFILES(X86)"]:
@@ -197,19 +203,65 @@ def _find_cache(spotify_data: Path) -> Optional[Path]:
 # ---------------------------------------------------------------------------
 
 def _get_version(exe: Path) -> Optional[str]:
+    """
+    Read the executable's file version with the Win32 version API.
+
+    Deliberately avoids PowerShell: no shell string is ever built from a path,
+    so a directory name containing quotes or shell metacharacters cannot be
+    interpreted as a command.  It is also an order of magnitude faster than
+    starting a PowerShell process.
+    """
+    if sys.platform != "win32":
+        return None
     try:
-        import subprocess
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command",
-             f"(Get-Item '{exe}').VersionInfo.FileVersion"],
-            capture_output=True, text=True, timeout=10
-        )
-        ver = result.stdout.strip()
-        if ver:
-            return ver
-    except Exception as e:
-        log.debug(f"Version detection failed: {e}")
-    return None
+        import ctypes
+        from ctypes import wintypes
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+    class VS_FIXEDFILEINFO(ctypes.Structure):
+        _fields_ = [
+            ("dwSignature", wintypes.DWORD),
+            ("dwStrucVersion", wintypes.DWORD),
+            ("dwFileVersionMS", wintypes.DWORD),
+            ("dwFileVersionLS", wintypes.DWORD),
+            ("dwProductVersionMS", wintypes.DWORD),
+            ("dwProductVersionLS", wintypes.DWORD),
+            ("dwFileFlagsMask", wintypes.DWORD),
+            ("dwFileFlags", wintypes.DWORD),
+            ("dwFileOS", wintypes.DWORD),
+            ("dwFileType", wintypes.DWORD),
+            ("dwFileSubtype", wintypes.DWORD),
+            ("dwFileDateMS", wintypes.DWORD),
+            ("dwFileDateLS", wintypes.DWORD),
+        ]
+
+    try:
+        path = str(exe)
+        version_dll = ctypes.windll.version
+        size = version_dll.GetFileVersionInfoSizeW(path, None)
+        if not size:
+            log.debug(f"No version resource in {path}")
+            return None
+        buffer = ctypes.create_string_buffer(size)
+        if not version_dll.GetFileVersionInfoW(path, 0, size, buffer):
+            return None
+        pointer = ctypes.c_void_p()
+        length = wintypes.UINT()
+        if not version_dll.VerQueryValueW(
+            buffer, "\\", ctypes.byref(pointer), ctypes.byref(length)
+        ):
+            return None
+        if not pointer.value:
+            return None
+        info = ctypes.cast(pointer, ctypes.POINTER(VS_FIXEDFILEINFO)).contents
+        ms, ls = info.dwFileVersionMS, info.dwFileVersionLS
+        if not ms and not ls:
+            return None
+        return f"{ms >> 16}.{ms & 0xFFFF}.{ls >> 16}.{ls & 0xFFFF}"
+    except (OSError, AttributeError, ValueError) as exc:
+        log.debug(f"Version detection failed: {exc}")
+        return None
 
 
 # ---------------------------------------------------------------------------
