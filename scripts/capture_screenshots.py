@@ -150,6 +150,15 @@ def main() -> int:
     for filename, page in PAGES:
         app.show_page(page)
         app.update()
+        if page == "Activity":
+            # Log lines contain real profile paths; redact them before they can
+            # end up in a published screenshot.
+            from src.core.app_paths import redact_path
+
+            panel = app.log_panel
+            panel.entries = [(ts, level, redact_path(message))
+                             for ts, level, message in panel.entries]
+            panel.render()
         _wait(app, 0.7)
 
         image = capture_window(hwnd) if hwnd else None

@@ -153,8 +153,12 @@ Windows build; no substitute or mock-up is published here.
 | **Dashboard**<br>![Dashboard](docs/screenshots/01_dashboard.png) | **Optimizations**<br>![Optimizations](docs/screenshots/02_optimizations.png) |
 | **Performance**<br>![Performance](docs/screenshots/03_performance.png) | **Processes**<br>![Processes](docs/screenshots/04_processes.png) |
 | **Backups & Restore**<br>![Backups](docs/screenshots/05_backups.png) | **Startup**<br>![Startup](docs/screenshots/06_startup.png) |
-| **Installation**<br>![Installation](docs/screenshots/07_installation.png) | **Activity Logs**<br>![Activity](docs/screenshots/08_activity_logs.png) |
+| **Installation**<br>![Installation](docs/screenshots/07_installation.png) | **Activity Logs**<br>Capture withheld — see privacy note. |
 | **Settings**<br>![Settings](docs/screenshots/09_settings.png) | **About**<br>![About](docs/screenshots/10_about.png) |
+
+**Privacy note:** the Activity Logs capture was withdrawn because its log lines
+included the local Windows account name. It will be regenerated only after the
+log paths are redacted; `scripts/capture_screenshots.py` now sanitizes them.
 
 ---
 
