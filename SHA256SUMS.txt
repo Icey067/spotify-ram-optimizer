@@ -1,1 +1,1 @@
-f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12 *SpotifyOptimizer.exe
+73eedab7a2d7b861d0907a4a3a2933a7c74165ed11eb93f57ad8622320f06a2c *SpotifyOptimizer.exe

@@ -13,6 +13,7 @@ history rewrite has been made; the working tree is left for review.
 | **Diagnostics workspace** | Dedicated page built on `run_health_check`: session check count, critical/warning/observation/information totals, last-check time, grouped findings with evidence, impact and recommendation, Refresh, and redacted Markdown export. It never applies a fix. |
 | **Privacy Center workspace** | Shows the exact config, backup, log and history paths; files read; files modified; HKCU registry locations; retention settings and live counts. Clear-logs, clear-history, manage-backups and export-report actions reuse the existing app behaviour. |
 | **Twelve-destination navigation** | Sidebar grouped into Overview, Management and Application, with lazy page construction and `grid_remove` view isolation. |
+| **Bounded workspace memory** | At most three recently used page trees remain live; older inactive pages are destroyed instead of accumulating in memory. |
 | **Redaction hardening** | `redact_text()` scrubs Windows and POSIX profile paths anywhere in diagnostic text and activity-log displays. |
 | **Version consistency test** | `tests/test_version_consistency.py` enforces `1.2.0` across the engine, GUI, About page, `version_info.txt`, README, CHANGELOG and these notes. |
 | **Windows acceptance runner** | `scripts/windows_acceptance.ps1` checks host, dependencies, imports, tests, both smoke tests, the fresh build, hash, PE metadata and screenshots, then writes a report with real exit codes. |
@@ -41,8 +42,8 @@ Pillow 13.0.0; psutil 7.2.2; pytest 9.1.1.
 | Packaged executable smoke test (`--smoke-test`) | **11/11 checks, exit 0** |
 | PE version metadata | `FileVersion 1.2.0.0`, `ProductVersion 1.2.0`, Company `Icey` |
 | Embedded icon | **1 icon resource** (`ExtractIconEx`) |
-| Executable size | **34,373,370 bytes** |
-| SHA-256 | `f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12` |
+| Executable size | **34,375,428 bytes** |
+| SHA-256 | `73eedab7a2d7b861d0907a4a3a2933a7c74165ed11eb93f57ad8622320f06a2c` |
 | Screenshots | **12 captures**, 1770x1170, all twelve destinations |
 | Screenshot inventory check | 12 of 12 expected |
 
@@ -71,10 +72,10 @@ test-harness limitation, not an application failure. The earlier Linux audit
 
 ### Installation
 
-1. Use `release/SpotifyOptimizer.exe` (34,373,370 bytes).
+1. Use `release/SpotifyOptimizer.exe` (34,375,428 bytes).
 2. Verify it with:
    `Get-FileHash ./release/SpotifyOptimizer.exe -Algorithm SHA256`; the hash must
-   equal `f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12`.
+   equal `73eedab7a2d7b861d0907a4a3a2933a7c74165ed11eb93f57ad8622320f06a2c`.
 3. Run it. No installer and no administrator rights are required.
 
 ### Tested vs not tested

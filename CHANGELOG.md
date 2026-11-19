@@ -22,6 +22,7 @@ Final release candidate incorporating the Diagnostics and Privacy Center workspa
 
 - Updated application version to `1.2.0` across engine, GUI, metadata, and docs.
 - Updated Win32 PE version resource to `1.2.0.0`.
+- Bounded live workspace pages to three recently used panels; navigating away destroys older inactive widget trees so they stop occupying memory.
 - Redacted historical activity log screenshot exposure and updated acceptance suite.
 
 ### Validation (1.2.0)
@@ -31,8 +32,8 @@ Final release candidate incorporating the Diagnostics and Privacy Center workspa
   both **11/11, exit 0**.
 - PE metadata: `FileVersion 1.2.0.0`, `ProductVersion 1.2.0`, Company `Icey`;
   1 embedded icon resource.
-- Executable: **34,373,370 bytes**, SHA-256
-  `f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12`.
+- Executable: **34,375,428 bytes**, SHA-256
+  `73eedab7a2d7b861d0907a4a3a2933a7c74165ed11eb93f57ad8622320f06a2c`.
 - Twelve screenshots regenerated at 1770x1170; activity-log paths redacted.
 
 ## [1.1.1] — 2026-11-18
