@@ -258,8 +258,9 @@ def run_smoke_test() -> int:
         app.show_page("Dashboard")
         app.update()
         assert app.dashboard.winfo_ismapped() == 1
-        assert app.settings_panel.winfo_ismapped() == 0
-        assert app.log_panel.winfo_ismapped() == 0
+        from src.gui.navigation import is_page_mapped
+        assert is_page_mapped(app.settings_panel) is False
+        assert is_page_mapped(app.log_panel) is False
         print("   [OK] Page isolation verified")
 
         from src.core.process_manager import get_process_details
@@ -363,7 +364,10 @@ def run_smoke_test() -> int:
             function()
         except Exception as exc:  # noqa: BLE001 - smoke test reports everything
             errors.append(f"{label}: {exc}")
-            print(f"   [FAIL] {exc}")
+            detail = str(exc) or repr(exc)
+            print(f"   [FAIL] {type(exc).__name__}: {detail}")
+            import traceback
+            traceback.print_exc()
 
     print("=" * 62)
     if errors:

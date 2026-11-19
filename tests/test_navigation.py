@@ -95,7 +95,8 @@ def test_navigate_to_every_page(app_instance, page_name, expected_panel_attr,
                 assert button.cget("fg_color") == "transparent"
 
     # Every declared page is reachable.
-    assert set(app._pages) == {name for name, _, _ in PAGES}
+    assert len(app._pages) <= app.MAX_LIVE_PAGES
+    assert set(app.nav.pages) == set(app._pages)
 
 
 def test_navigation_sequence_and_no_duplicates(app_instance):
@@ -119,7 +120,19 @@ def test_navigation_sequence_and_no_duplicates(app_instance):
             assert app.nav.is_visible(page) is True
 
     assert len(app._page_host.winfo_children()) == initial_children
-    assert len(app.nav.pages) == len(PAGES)
+    assert len(app.nav.pages) <= app.MAX_LIVE_PAGES
+
+
+def test_navigation_evicts_old_inactive_pages(app_instance):
+    """The workspace keeps at most three recently used page trees allocated."""
+    app = app_instance
+    for name in ("Dashboard", "Optimizations", "Performance", "Processes"):
+        app.show_page(name)
+        app.update()
+
+    assert len(app._pages) <= app.MAX_LIVE_PAGES
+    assert app.nav.current_page == "Processes"
+    assert len(app._page_host.winfo_children()) <= app.MAX_LIVE_PAGES
 
 
 def test_log_entry_does_not_paint_over_optimizations(app_instance):

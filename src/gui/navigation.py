@@ -5,7 +5,7 @@ Guarantees:
   - 100% synchronization between current_page, sidebar highlight, header, and visible page.
   - Zero frame bleeding or overlap by strictly calling grid() on the active page and grid_remove() on all inactive pages.
   - Handles both standard CTkFrame and composite CTkScrollableFrame correctly.
-  - Preservation of all page instances and their state (no duplicate creation or memory churn).
+  - Bounded in-memory page cache (old inactive pages are destroyed to limit memory use).
   - Single-click immediate transition with no flickering.
 """
 from __future__ import annotations
@@ -84,6 +84,14 @@ class NavigationController:
 
     def register_button(self, key: str, button: SidebarButton) -> None:
         self.buttons[key] = button
+
+    def unregister_page(self, key: str) -> bool:
+        """Remove an evicted page from the navigation registry."""
+        widget = self.pages.pop(key, None)
+        if widget is None:
+            return False
+        self.on_page_shown_callbacks.pop(key, None)
+        return True
 
     def is_visible(self, key: str) -> bool:
         if key not in self.pages:

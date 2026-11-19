@@ -63,6 +63,7 @@ from .workspace_pages import (
 class App(ctk.CTk):
     """Authoritative responsive navigation shell for the Spotify Optimizer."""
     VERSION = "1.2.0"
+    MAX_LIVE_PAGES = 3
 
     def __init__(self) -> None:
         super().__init__()
@@ -93,6 +94,7 @@ class App(ctk.CTk):
         self._health_running = False
         self._spicetify_signature: Optional[tuple] = None
         self._pages: dict[str, ctk.CTkFrame] = {}
+        self._page_order: list[str] = []
         self._factories: dict = {}
         self._page_callbacks: dict = {}
         self._sidebar_buttons: dict = {}
@@ -381,12 +383,17 @@ class App(ctk.CTk):
         """Return the page, building and registering it on first use."""
         page = self._pages.get(name)
         if page is not None:
+            if name in self._page_order:
+                self._page_order.remove(name)
+            self._page_order.append(name)
+            self._evict_unused_pages()
             return page
         factory = self._factories.get(name)
         if factory is None:
             return None
         page = factory()
         self._pages[name] = page
+        self._page_order.append(name)
         self.nav.register_page(
             name,
             page,
@@ -395,6 +402,7 @@ class App(ctk.CTk):
         )
         if self.nav.current_page == name:
             self.nav.show_page(name)
+        self._evict_unused_pages()
         return page
 
     def show_page(self, name: str) -> bool:
@@ -403,7 +411,25 @@ class App(ctk.CTk):
             return False
         if self._ensure_page(name) is None:
             return False
-        return self.nav.show_page(name)
+        shown = self.nav.show_page(name)
+        if shown:
+            self._evict_unused_pages()
+        return shown
+
+    def _evict_unused_pages(self, limit: Optional[int] = None) -> None:
+        """Destroy oldest inactive pages once the workspace cache exceeds its limit."""
+        if limit is None:
+            limit = self.MAX_LIVE_PAGES
+        inactive = [name for name in self._page_order if name != self.nav.current_page]
+        while len(self._pages) > limit and inactive:
+            name = inactive.pop(0)
+            page = self._pages.pop(name, None)
+            if name in self._page_order:
+                self._page_order.remove(name)
+            if page is None:
+                continue
+            self.nav.unregister_page(name)
+            page.destroy()
 
     @property
     def dashboard(self) -> DashboardPanel:
