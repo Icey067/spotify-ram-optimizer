@@ -6,12 +6,19 @@ The window is rendered by the application itself and captured through Win32
 screen saver cannot produce a wrong or blank image.  If the application cannot
 start, or a page renders nothing, this script fails instead of writing an image.
 
-Run:  python scripts/capture_screenshots.py [output-directory]
+Run:  python scripts/capture_screenshots.py [output-directory] [--isolated]
+
+``--isolated`` points ``SPOTIFY_OPTIMIZER_HOME`` at a temporary directory before
+the application starts, so documentation captures never contain the developer's
+real backup history, settings or activity log while Spotify detection still
+uses the real installation.
 """
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from ctypes import wintypes
@@ -103,8 +110,14 @@ def capture_window(hwnd: int):
 
 
 def main() -> int:
-    output = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "docs" / "screenshots"
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    output = Path(args[0]) if args else ROOT / "docs" / "screenshots"
     output.mkdir(parents=True, exist_ok=True)
+
+    if "--isolated" in sys.argv[1:]:
+        base = Path(tempfile.mkdtemp(prefix="spotify_capture_"))
+        os.environ["SPOTIFY_OPTIMIZER_HOME"] = str(base)
+        print(f"isolated app data: {base}")
 
     try:
         from PIL import ImageGrab
@@ -161,15 +174,24 @@ def main() -> int:
             panel.render()
         _wait(app, 0.7)
 
-        image = capture_window(hwnd) if hwnd else None
-        if image is None:
-            x, y = app.winfo_rootx(), app.winfo_rooty()
-            width, height = app.winfo_width(), app.winfo_height()
-            image = ImageGrab.grab(bbox=(x, y, x + width, y + height),
-                                   all_screens=True)
+        # PrintWindow can return a black frame while the first paint is still
+        # being composited. Retry briefly before treating the page as blank.
+        image = None
+        for _attempt in range(8):
+            app.update_idletasks()
+            app.update()
+            image = capture_window(hwnd) if hwnd else None
+            if image is None:
+                x, y = app.winfo_rootx(), app.winfo_rooty()
+                width, height = app.winfo_width(), app.winfo_height()
+                image = ImageGrab.grab(bbox=(x, y, x + width, y + height),
+                                       all_screens=True)
 
-        low, high = image.convert("L").getextrema()
-        if high - low <= 8:
+            low, high = image.convert("L").getextrema()
+            if high - low > 8:
+                break
+            _wait(app, 0.5)
+        else:
             app.destroy()
             print(f"refused to save {filename}: the page rendered blank")
             return 1

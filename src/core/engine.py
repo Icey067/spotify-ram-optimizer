@@ -58,7 +58,7 @@ from .spicetify_manager import SpicetifyManager
 
 log = get_logger("engine")
 
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 
 @dataclass

@@ -590,7 +590,7 @@ class AppSettingsPanel(ctk.CTkScrollableFrame):
 # ---------------------------------------------------------------------------
 
 class AboutPanel(ctk.CTkScrollableFrame):
-    def __init__(self, master, version: str = "1.1.1", **kwargs) -> None:
+    def __init__(self, master, version: str = "1.2.0", **kwargs) -> None:
         super().__init__(master, fg_color="transparent", **kwargs)
         self.version = version
         self.grid_columnconfigure(0, weight=1)

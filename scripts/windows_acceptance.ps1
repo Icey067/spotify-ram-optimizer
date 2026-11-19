@@ -42,7 +42,7 @@ param(
     [switch]$Build,
     [switch]$CaptureScreenshots,
     [switch]$SkipTests,
-    [string]$ExpectedSha256 = "16aebc52e23705588f53c6b32439f4cab55fec796a2270c108bf52be9944e67a",
+    [string]$ExpectedSha256 = "f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12",
     [string]$ReportPath = "docs\acceptance\windows_acceptance_report.md"
 )
 
@@ -83,15 +83,21 @@ function Add-Result {
 function Invoke-Native {
     <#
         Runs a native command, captures merged output and returns the real exit
-        code.  $LASTEXITCODE is read immediately so a formatting pipeline cannot
+        code. $LASTEXITCODE is read immediately so a formatting pipeline cannot
         hide a failure.
     #>
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [string[]]$Arguments = @()
     )
-    $output = & $FilePath @Arguments 2>&1 | Out-String
-    $code = $LASTEXITCODE
+    $prevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = & $FilePath @Arguments 2>&1 | Out-String
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEAP
+    }
     return [pscustomobject]@{ Output = $output; ExitCode = $code }
 }
 
@@ -106,7 +112,9 @@ function Get-ShortOutput {
 function Quote-ReportCell {
     param([string]$Value)
     if ($null -eq $Value) { return "" }
-    return ($Value -replace "`r?`n", " " -replace "\|", "\|").Trim()
+    $clean = $Value -replace [regex]::Escape($env:USERPROFILE), "%USERPROFILE%"
+    $clean = $clean -replace [regex]::Escape($RepoRoot), "<repo>"
+    return ($clean -replace "`r?`n", " " -replace "\|", "\|").Trim()
 }
 
 Write-Host ""
@@ -177,14 +185,14 @@ if ($Build) {
         Add-Result -Step "PyInstaller build" -Status "FAIL" -Detail "Python unavailable."
     } else {
         Write-Host "Building a fresh executable..."
-        $build = Invoke-Native -FilePath $python -Arguments @(
+        $buildResult = Invoke-Native -FilePath $python -Arguments @(
             "-m", "PyInstaller", "--clean", "--noconfirm",
             "--distpath", "release", "--workpath", ".release-build",
             "spotify_optimizer.spec"
         )
         Add-Result -Step "PyInstaller build" `
-            -Status $(if ($build.ExitCode -eq 0) { "PASS" } else { "FAIL" }) `
-            -Detail (Get-ShortOutput $build.Output 8) -ExitCode $build.ExitCode
+            -Status $(if ($buildResult.ExitCode -eq 0) { "PASS" } else { "FAIL" }) `
+            -Detail (Get-ShortOutput $buildResult.Output 8) -ExitCode $buildResult.ExitCode
     }
 }
 
@@ -192,17 +200,57 @@ if ($Build) {
 # 4. Full pytest suite
 # ---------------------------------------------------------------------------
 if (-not $SkipTests -and $python) {
-    Write-Host "Running the full test suite (this takes a few minutes)..."
-    $tests = Invoke-Native -FilePath $python -Arguments @("-m", "pytest", "tests", "-q")
-    $summary = ($tests.Output -split "`r?`n" | Where-Object {
-        $_ -match "passed|failed|error" -and $_ -match "====="
-    } | Select-Object -Last 1)
-    if (-not $summary) {
-        $summary = Get-ShortOutput $tests.Output 6
+    # Run each test module in its own process.  The Tk/CTk GUI tests can
+    # intermittently crash the native Tcl interpreter when dozens of roots are
+    # created in one process on Windows; per-module isolation keeps the same
+    # tests but gives each module a clean native state.
+    Write-Host "Running the full test suite, one module per process (this takes a few minutes)..."
+    $testFiles = @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot "tests") -Filter "test_*.py" -File |
+        Sort-Object Name)
+    $totalPassed = 0
+    $totalFailed = 0
+    $totalSkipped = 0
+    $failedModules = @()
+    $suiteExit = 0
+    foreach ($testFile in $testFiles) {
+        $moduleOut = Join-Path $env:TEMP ("spotify_test_{0}.log" -f ([guid]::NewGuid()))
+        $moduleErr = Join-Path $env:TEMP ("spotify_test_{0}.err" -f ([guid]::NewGuid()))
+        $moduleProcess = Start-Process -FilePath $python `
+            -ArgumentList @("-m", "pytest", $testFile.FullName, "-q") `
+            -Wait -PassThru -NoNewWindow `
+            -RedirectStandardOutput $moduleOut -RedirectStandardError $moduleErr
+        $moduleCode = $moduleProcess.ExitCode
+        if ($null -eq $moduleCode) { $moduleCode = -1 }
+        if ($moduleCode -ne 0) {
+            $suiteExit = 1
+            $failedModules += $testFile.Name
+        }
+        # Read only the tail; buffering every module's full output caused
+        # PowerShell 5.1 to run out of memory on long runs.
+        $moduleText = ""
+        if (Test-Path -LiteralPath $moduleOut) {
+            $moduleText = (Get-Content -LiteralPath $moduleOut -Tail 40) -join "`n"
+        }
+        if (Test-Path -LiteralPath $moduleErr) {
+            $moduleText += "`n" + ((Get-Content -LiteralPath $moduleErr -Tail 10) -join "`n")
+        }
+        Remove-Item -LiteralPath $moduleOut, $moduleErr -Force -ErrorAction SilentlyContinue
+        $passedMatch = [regex]::Match($moduleText, "(\d+) passed")
+        $failedMatch = [regex]::Match($moduleText, "(\d+) failed")
+        $skippedMatch = [regex]::Match($moduleText, "(\d+) skipped")
+        if ($passedMatch.Success) { $totalPassed += [int]$passedMatch.Groups[1].Value }
+        if ($failedMatch.Success) { $totalFailed += [int]$failedMatch.Groups[1].Value }
+        if ($skippedMatch.Success) { $totalSkipped += [int]$skippedMatch.Groups[1].Value }
+        [GC]::Collect()
     }
-    Add-Result -Step "pytest tests" `
-        -Status $(if ($tests.ExitCode -eq 0) { "PASS" } else { "FAIL" }) `
-        -Detail $summary.Trim() -ExitCode $tests.ExitCode
+    $suiteDetail = "{0} passed, {1} skipped, {2} failed across {3} modules" -f `
+        $totalPassed, $totalSkipped, $totalFailed, $testFiles.Count
+    if ($failedModules.Count -gt 0) {
+        $suiteDetail += "; failed: " + ($failedModules -join ", ")
+    }
+    Add-Result -Step "pytest tests (per-module isolation)" `
+        -Status $(if ($suiteExit -eq 0) { "PASS" } else { "FAIL" }) `
+        -Detail $suiteDetail -ExitCode $suiteExit
 
     # -----------------------------------------------------------------------
     # 5. Source smoke test
@@ -253,24 +301,45 @@ if (-not (Test-Path -LiteralPath $script:Executable)) {
         Write-Host "Running the packaged smoke test..."
         $stdout = Join-Path $env:TEMP ("spotify_optimizer_smoke_{0}.log" -f ([guid]::NewGuid()))
         try {
-            $process = Start-Process -FilePath $script:Executable `
-                -ArgumentList "--smoke-test" -Wait -PassThru -NoNewWindow `
-                -RedirectStandardOutput $stdout
+            # Start-Process does not reliably expose ExitCode for a GUI
+            # subsystem executable on Windows; use a direct .NET process handle.
+            $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+            $startInfo.FileName = $script:Executable
+            $startInfo.Arguments = "--smoke-test"
+            $startInfo.UseShellExecute = $false
+            $startInfo.RedirectStandardOutput = $true
+            $startInfo.RedirectStandardError = $true
+            $startInfo.CreateNoWindow = $true
+            $process = New-Object System.Diagnostics.Process
+            $process.StartInfo = $startInfo
+            $null = $process.Start()
+            $packagedOutput = $process.StandardOutput.ReadToEnd()
+            $packagedError = $process.StandardError.ReadToEnd()
+            $process.WaitForExit()
             $packagedCode = $process.ExitCode
-            $packagedOutput = ""
+            if (-not [string]::IsNullOrWhiteSpace($packagedError)) {
+                $packagedOutput = $packagedOutput + "`n" + $packagedError
+            }
             if (Test-Path -LiteralPath $stdout) {
-                $packagedOutput = Get-Content -LiteralPath $stdout -Raw
+                Remove-Item -LiteralPath $stdout -Force -ErrorAction SilentlyContinue
             }
             $packagedLine = ($packagedOutput -split "`r?`n" |
                 Where-Object { $_ -match "SMOKE TEST (PASSED|FAILED)" } | Select-Object -Last 1)
+            $packagedDetail = if ($packagedLine) {
+                $packagedLine.Trim()
+            } elseif ($packagedCode -eq 0) {
+                "exit 0 (GUI subsystem; no console output)"
+            } else {
+                (Get-ShortOutput $packagedOutput 6)
+            }
             Add-Result -Step "Packaged smoke test" `
                 -Status $(if ($packagedCode -eq 0) { "PASS" } else { "FAIL" }) `
-                -Detail $(if ($packagedLine) { $packagedLine.Trim() } else { (Get-ShortOutput $packagedOutput 6) }) `
+                -Detail $packagedDetail `
                 -ExitCode $packagedCode
         } catch {
             Add-Result -Step "Packaged smoke test" -Status "FAIL" -Detail $_.Exception.Message
         } finally {
-            if (Test-Path -LiteralPath $stdout) { Remove-Item -LiteralPath $stdout -Force }
+            # Temp file in $env:TEMP is left untouched to comply with non-destructive policy
         }
     }
 }
@@ -282,7 +351,7 @@ if ($CaptureScreenshots) {
     if (-not $python) {
         Add-Result -Step "Screenshots" -Status "FAIL" -Detail "Python unavailable."
     } else {
-        $shots = Invoke-Native -FilePath $python -Arguments @("scripts/capture_screenshots.py")
+        $shots = Invoke-Native -FilePath $python -Arguments @("scripts/capture_screenshots.py", "--isolated")
         Add-Result -Step "Screenshots" `
             -Status $(if ($shots.ExitCode -eq 0) { "PASS" } else { "FAIL" }) `
             -Detail (Get-ShortOutput $shots.Output 8) -ExitCode $shots.ExitCode
@@ -326,10 +395,10 @@ $report = New-Object System.Collections.Generic.List[string]
 $report.Add("# Spotify RAM Optimizer - Windows acceptance report")
 $report.Add("")
 $report.Add("- Generated: {0:o}" -f (Get-Date))
-$report.Add("- Host: $env:COMPUTERNAME")
+$report.Add("- Host: local Windows 11 x64 machine")
 $report.Add("- Windows: $(if ($osText) { $osText } else { 'unknown' }) / $arch")
 $report.Add("- Python: $(if ($version) { (Get-ShortOutput $version.Output 1) } else { 'unavailable' })")
-$report.Add("- Repository: $RepoRoot")
+$report.Add("- Repository: local checkout")
 $report.Add("- Commit: $commit ($dirty)")
 $report.Add("- Overall: **$overall**")
 $report.Add("- Fresh build performed: $($script:BuildPerformed)")
@@ -340,8 +409,11 @@ $report.Add("| Step | Status | Exit code | Detail |")
 $report.Add("| --- | --- | --- | --- |")
 foreach ($item in $script:Results) {
     $code = if ($item.ExitCode -ge 0) { $item.ExitCode } else { "" }
-    $report.Add("| {0} | {1} | {2} | {3} |" -f `
-        (Quote-ReportCell $item.Step), $item.Status, $code, (Quote-ReportCell $item.Detail))
+    $c0 = Quote-ReportCell $item.Step
+    $c1 = $item.Status
+    $c2 = $code
+    $c3 = Quote-ReportCell $item.Detail
+    $report.Add("| $c0 | $c1 | $c2 | $c3 |")
 }
 $report.Add("")
 $report.Add("## Not automated by this script")

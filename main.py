@@ -75,8 +75,10 @@ def run_smoke_test() -> int:
     Returns 0 on success.
     """
     _ensure_console_streams()
+    from src.core.engine import APP_VERSION
     print("=" * 62)
-    print("SPOTIFY RAM OPTIMIZER -- STANDALONE SMOKE TEST")
+    print(f"SPOTIFY RAM OPTIMIZER v{APP_VERSION} -- STANDALONE SMOKE TEST")
+    print(f"Application version: {APP_VERSION}")
     print(f"Frozen executable: {getattr(sys, 'frozen', False)}")
     print(f"Executable path:   {sys.executable}")
     print(f"Python version:    {sys.version.split()[0]}")
@@ -377,6 +379,11 @@ def run_smoke_test() -> int:
 
 
 def main() -> None:
+    if "--version" in sys.argv or "-v" in sys.argv:
+        from src.core.engine import APP_VERSION
+        print(f"Spotify RAM Optimizer v{APP_VERSION}")
+        sys.exit(0)
+
     if "--smoke-test" in sys.argv:
         sys.exit(run_smoke_test())
 

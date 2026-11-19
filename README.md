@@ -6,7 +6,7 @@
 
 A Windows utility that measures Spotify's resource use, explains what each change does, and keeps every change reversible.
 
-**Current release: v1.1.1** — built, tested and verified locally. Not published.
+**Current release: v1.2.0** — release candidate (built, tested, and verified on Windows). Not published.
 
 [![CI](https://github.com/Icey067/spotify-ram-optimizer/actions/workflows/ci.yml/badge.svg)](https://github.com/Icey067/spotify-ram-optimizer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -57,8 +57,8 @@ No administrator rights are required. The application never elevates.
 ## Downloads
 
 - **Latest published release: [v1.0.0](https://github.com/Icey067/spotify-ram-optimizer/releases)** — the original seven-page interface.
-- **v1.1.1 (this source tree) is not published yet.** It is built and verified locally; the binary is committed at `release/SpotifyOptimizer.exe`. Build instructions, the verification table and the current SHA-256 are in [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md). Publishing a release is a deliberate, manual step — nothing has been tagged or pushed.
-- **The committed binary predates the Diagnostics and Privacy Center pages.** Those two pages exist in this source tree but are not in `release/SpotifyOptimizer.exe`; a fresh Windows build is required before the binary can be described as containing them.
+- **v1.2.0 (this release candidate) is built and verified locally on Windows.** The verified standalone binary is written to `release/SpotifyOptimizer.exe` and checked with `SHA256SUMS.txt`. Build instructions, the verification table and release details are in [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md). Publishing a release is a deliberate, manual step — nothing has been tagged or pushed.
+- **Includes all twelve workspaces**, featuring the newly integrated Diagnostics and Privacy Center pages.
 
 ---
 
@@ -138,27 +138,27 @@ Twelve pages: **Dashboard**, **Optimizations**, **Diagnostics**, **Performance**
 **Processes**, **Startup**, **Installation**, **Backups & Restore**,
 **Activity Logs**, **Privacy Center**, **Settings**, **About**.
 
-The screenshot table below is a real capture of the ten-page build currently
-committed at `release/SpotifyOptimizer.exe`, taken on the developer's Windows 11
-machine (Spotify 1.3.10.2586, 7 processes) with
+The screenshot table below is a real capture of the twelve-page v1.2.0 build,
+taken on the developer's Windows 11 machine with
 `scripts/capture_screenshots.py`. The images are not mockups; paths are redacted
-to `%USERPROFILE%` by the application itself.
-
-**Diagnostics and Privacy Center are not in those images and not in that
-binary.** They exist only in this source tree and must be captured from a fresh
-Windows build; no substitute or mock-up is published here.
+to `%USERPROFILE%` by the application itself. Captures use a temporary
+`SPOTIFY_OPTIMIZER_HOME`, so they contain no personal backup history or saved
+settings, and the Activity Logs capture is additionally sanitised.
 
 | Page | Page |
 | --- | --- |
 | **Dashboard**<br>![Dashboard](docs/screenshots/01_dashboard.png) | **Optimizations**<br>![Optimizations](docs/screenshots/02_optimizations.png) |
-| **Performance**<br>![Performance](docs/screenshots/03_performance.png) | **Processes**<br>![Processes](docs/screenshots/04_processes.png) |
-| **Backups & Restore**<br>![Backups](docs/screenshots/05_backups.png) | **Startup**<br>![Startup](docs/screenshots/06_startup.png) |
-| **Installation**<br>![Installation](docs/screenshots/07_installation.png) | **Activity Logs**<br>Capture withheld — see privacy note. |
+| **Diagnostics**<br>![Diagnostics](docs/screenshots/11_diagnostics.png) | **Performance**<br>![Performance](docs/screenshots/03_performance.png) |
+| **Processes**<br>![Processes](docs/screenshots/04_processes.png) | **Startup**<br>![Startup](docs/screenshots/06_startup.png) |
+| **Installation**<br>![Installation](docs/screenshots/07_installation.png) | **Backups & Restore**<br>![Backups](docs/screenshots/05_backups.png) |
+| **Activity Logs**<br>![Activity](docs/screenshots/08_activity_logs.png) | **Privacy Center**<br>![Privacy](docs/screenshots/12_privacy_center.png) |
 | **Settings**<br>![Settings](docs/screenshots/09_settings.png) | **About**<br>![About](docs/screenshots/10_about.png) |
 
-**Privacy note:** the Activity Logs capture was withdrawn because its log lines
-included the local Windows account name. It will be regenerated only after the
-log paths are redacted; `scripts/capture_screenshots.py` now sanitizes them.
+**Historical privacy note:** an older v1.0.0 Activity Logs capture
+(`05_activity_logs.png`) in commit `24aa235` showed the developer's local Windows
+account name in log paths. It remains in public Git history because history has
+not been rewritten; every v1.2.0 capture is redacted. See
+[`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md).
 
 ---
 
@@ -182,11 +182,15 @@ The suite is layered:
 | Integration | isolated Windows tree (`%APPDATA%\Spotify`, prefs, cache, Spicetify config) for detection, dry run, apply, verify, restore, conflicts, cache safety — registry mocked, `spicetify apply` simulated |
 | Smoke | `main.py --smoke-test` runs 11 subsystem checks including a real GUI cycle, every destination, the restore dialog and thread-safe UI dispatch |
 
-Latest full run on this source tree (Linux audit host, Tk 8.6 under Xvfb):
-**305 passed, 1 skipped** in 37 s. The skip is the Windows-only registry
-integration test. The suite has **not** yet been run on Windows, and GUI
-behaviour was exercised by widget tests rather than a human click-through; see
-`docs/RELEASE_NOTES.md` for the precise status.
+Latest native Windows acceptance run (Windows 11 Pro build 26300 x64,
+Python 3.14.7): **313 passed, 1 skipped, 0 failed across 23 test modules**,
+plus the source smoke test **11/11** and the packaged executable smoke test
+**11/11**, both exit 0. The one skip is the symlink test that requires
+elevation. The runner executes each test module in its own process because a
+single-process GUI run hit an intermittent native Tk crash on this Python/Tk
+combination; the isolation is a harness measure, not a change to the tests.
+GUI behaviour is exercised by widget tests; a human click-through was not
+performed. See `docs/RELEASE_NOTES.md` for the precise status.
 
 Tests use temporary directories and never target a real Spotify profile,
 registry value or cache.

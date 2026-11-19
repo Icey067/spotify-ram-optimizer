@@ -15,12 +15,12 @@ dist-*/
 .release-build/
 *.spec.bak
 
-# Preserve official release binaries
+# Preserve release directory but NOT the binary (binary goes to GitHub Release)
 !release/
-!release/SpotifyOptimizer.exe
 
-# Locally retained previous builds (kept on disk, not committed)
-release/SpotifyOptimizer-*.exe
+# Release binaries belong in GitHub Releases, not source history
+release/*.exe
+!release/SHA256SUMS.txt
 
 # Audit sandboxes & temporary test profiles
 .audit-*
@@ -61,6 +61,3 @@ backups/*
 *.tmp
 *.temp
 
-# Release binaries belong in GitHub Releases, not source history
-release/*.exe
-!release/SHA256SUMS.txt

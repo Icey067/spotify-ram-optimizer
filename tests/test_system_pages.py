@@ -1,5 +1,5 @@
 """
-GUI tests for the surfaces added in 1.1.1:
+GUI tests for the surfaces added in 1.1.1 and 1.2.0:
 
   - the Spotify process tree viewer,
   - the startup-entry management page,

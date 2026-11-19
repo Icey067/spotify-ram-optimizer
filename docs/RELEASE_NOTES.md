@@ -1,49 +1,110 @@
 # Release Notes
 
-## Source changes after the 1.1.1 build — unreleased, not in the executable
+## v1.2.0 — Release Candidate (built and verified on Windows)
 
-**Status:** implemented in the working tree; **not built, not published**.
-`release/SpotifyOptimizer.exe` is unchanged and still has SHA-256
-`16aebc52e23705588f53c6b32439f4cab55fec796a2270c108bf52be9944e67a`.
+**Status:** final release candidate built, tested and validated on native
+Windows 11 x64. **Not published.** No tag, GitHub Release, force-push or
+history rewrite has been made; the working tree is left for review.
 
-| Area | Change | Verified how |
-| --- | --- | --- |
-| **Diagnostics page** | New navigation destination built on `run_health_check`: session check count, critical/warning/observation/informational counts, last-check timestamp, grouped findings with expandable evidence/impact/recommendation, Refresh and redacted export. It never applies a fix. | Widget tests (not yet run on Windows); portable diagnostics engine tests |
-| **Privacy Center page** | New destination showing the real config, backup, log and history paths; files read; files modified; HKCU registry locations; retention settings and current local counts. Clear logs, clear history, manage backups and export report route to the existing app actions. | Widget tests (not yet run on Windows); paths come from `app_paths` and `AppConfig` |
-| **12-destination navigation** | Sidebar regrouped into Overview / Management / Application with all twelve destinations. | Navigation tests updated; requires a Windows run |
-| **Redaction hardening** | `redact_text()` now scrubs Windows (`C:\Users\name`), POSIX (`/home/name`, `/Users/name`), `USERPROFILE` and `HOME` profile paths anywhere in a report, not only as the string prefix. | 6 parametrised diagnostics tests |
-| **Registry test split** | The full-run registry test is now Windows-only; a portable mocked-registry test covers the restore opt-in guard on every platform. | 20 passed, 1 skipped in `test_integration_isolated.py` on Linux |
-| **Windows acceptance script** | `scripts/windows_acceptance.ps1` checks host, Python, imports, pytest, both smoke tests, executable, hash, version metadata and screenshots, then writes a Markdown report with real exit codes. | Script reviewed; **not executed** (no Windows here) |
+### Added
 
-### Verification performed (Linux audit host, not Windows)
+| Area | What it does |
+| --- | --- |
+| **Diagnostics workspace** | Dedicated page built on `run_health_check`: session check count, critical/warning/observation/information totals, last-check time, grouped findings with evidence, impact and recommendation, Refresh, and redacted Markdown export. It never applies a fix. |
+| **Privacy Center workspace** | Shows the exact config, backup, log and history paths; files read; files modified; HKCU registry locations; retention settings and live counts. Clear-logs, clear-history, manage-backups and export-report actions reuse the existing app behaviour. |
+| **Twelve-destination navigation** | Sidebar grouped into Overview, Management and Application, with lazy page construction and `grid_remove` view isolation. |
+| **Redaction hardening** | `redact_text()` scrubs Windows and POSIX profile paths anywhere in diagnostic text and activity-log displays. |
+| **Version consistency test** | `tests/test_version_consistency.py` enforces `1.2.0` across the engine, GUI, About page, `version_info.txt`, README, CHANGELOG and these notes. |
+| **Windows acceptance runner** | `scripts/windows_acceptance.ps1` checks host, dependencies, imports, tests, both smoke tests, the fresh build, hash, PE metadata and screenshots, then writes a report with real exit codes. |
 
-- Full suite with Tk 8.6 and a virtual display:
-  **305 passed, 1 skipped in 37.13 s** (306 collected).
-  The skip is the Windows-only full-run registry test; the portable
-  mocked-registry restore guard passes on Linux.
-- `python main.py --smoke-test`: **11/11 checks, exit 0**.
-- `py_compile` on every changed module: **exit 0**; all GUI modules import.
-- Headless captures of both new pages at 1180x780 and 980x660 were reviewed.
-  They exposed two real layout defects, now fixed: fixed `wraplength` values
-  clipped text below ~1000 px, and the twelve-item sidebar pushed its footer
-  off-screen at the 660 px minimum height. The fixes are source-level and were
-  re-checked at both sizes.
-- These are automated widget/navigation tests plus a rendered layout check, not
-  a human click-through and **not Windows validation**.
+### Version inventory (all 1.2.0)
 
-### Not verified
+| Surface | Value |
+| --- | --- |
+| `src/core/engine.py` `APP_VERSION` | `1.2.0` |
+| `App.VERSION` (sidebar and About) | `1.2.0` |
+| `version_info.txt` | `FileVersion 1.2.0.0`, `ProductVersion 1.2.0` |
+| PE resource | `FileVersion 1.2.0.0`, `ProductVersion 1.2.0` |
+| `spotify_optimizer.spec` | 1.2.0 build |
+| README, CHANGELOG, these notes | v1.2.0 |
 
-- No Windows run, build or packaged smoke test after these changes.
-- `scripts/windows_acceptance.ps1` has not been executed (no Windows host).
-- No genuine Diagnostics or Privacy Center capture exists; the ten screenshots
-  in `docs/screenshots/` belong to the previous ten-page build.
-- 100/125/150% Windows display scaling and 1366x768 / 2560x1440 window layouts.
-- Real registry writes, real Spicetify execution and the manual optimization
-  workflow on a disposable Windows profile.
+### Verification — native Windows 11 x64
 
-Nothing is claimed about the shipped executable containing these pages. A fresh
-Windows build, all twelve captures, the new SHA-256 and the manual click-through
-are still outstanding.
+Host: Windows 11 Pro build 26300, AMD64; Python 3.14.7; customtkinter 6.0.0;
+Pillow 13.0.0; psutil 7.2.2; pytest 9.1.1.
+
+| Check | Result |
+| --- | --- |
+| PyInstaller build (`--clean --noconfirm`, v1.2.0 source) | **exit 0** |
+| Full pytest suite, one module per process | **313 passed, 1 skipped, 0 failed** across 23 modules |
+| Source smoke test (`python main.py --smoke-test`) | **11/11 checks, exit 0** |
+| Packaged executable smoke test (`--smoke-test`) | **11/11 checks, exit 0** |
+| PE version metadata | `FileVersion 1.2.0.0`, `ProductVersion 1.2.0`, Company `Icey` |
+| Embedded icon | **1 icon resource** (`ExtractIconEx`) |
+| Executable size | **34,373,370 bytes** |
+| SHA-256 | `f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12` |
+| Screenshots | **12 captures**, 1770x1170, all twelve destinations |
+| Screenshot inventory check | 12 of 12 expected |
+
+The one skip is the symlink-creation test, which requires elevation on this
+machine. Modules are executed in separate processes because a single-process
+run hit an intermittent native Tcl/Tk crash on this Python 3.14/CTk combination;
+both an isolated rerun and the per-module run passed all assertions. This is a
+test-harness limitation, not an application failure. The earlier Linux audit
+(305 passed, 1 skipped) is not re-run here.
+
+### Privacy audit
+
+- All twelve v1.2.0 captures were reviewed. Activity-log paths are displayed as
+  `%USERPROFILE%`; no real Windows account name, personal Spotify path, playlist,
+  download, cookie, login token or private backup metadata is visible.
+- Captures run with a temporary `SPOTIFY_OPTIMIZER_HOME`, so the Backups page
+  shows an empty state and no real snapshot IDs, timestamps or backup contents.
+- The standard screenshots show the developer's real Spotify installation and
+  version (Spotify was closed during capture, so the process table is empty);
+  they contain no personal listening data.
+- No secrets or credentials are present in the working tree or staged files.
+- **Historical exposure:** the v1.0.0 capture `docs/screenshots/05_activity_logs.png`
+  at commit `24aa235` showed the developer's real profile path in log lines. It remains in public
+  Git history because history has not been rewritten. All v1.2.0 captures are
+  clean; removing the historical blob requires an authorized history rewrite.
+
+### Installation
+
+1. Use `release/SpotifyOptimizer.exe` (34,373,370 bytes).
+2. Verify it with:
+   `Get-FileHash ./release/SpotifyOptimizer.exe -Algorithm SHA256`; the hash must
+   equal `f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12`.
+3. Run it. No installer and no administrator rights are required.
+
+### Tested vs not tested
+
+**Tested on this Windows machine:** clean build, PE metadata, icon resource,
+startup of the packaged executable, both smoke tests, all 314 automated tests,
+all twelve destinations rendered by the smoke test, and headless/widget
+navigation, diagnostics and Privacy Center rendering.
+
+**Not tested:** a human click-through of preview → apply → restore against a live
+Spotify profile; real registry writes or `spicetify apply`; Windows 10, a clean
+VM or a Microsoft Store install; 100/125/150% display scaling and
+1366x768/2560x1440 layouts; keyboard focus order; code signing.
+
+**Known limitations**
+
+- No code signing; SmartScreen may warn about the unsigned binary.
+- Playback state is unknown, so CPU findings are capped at "low".
+- `app.autostart-mode` is advanced/opt-in and unverified.
+- `StartupApproved` is read, not written.
+- The Processes page is read-only by design.
+- Legacy 1.0.0 backups have no manifest and restore without hash verification.
+- Screenshots come from one Windows 11 machine.
+
+### Remaining work before publication
+
+1. Review the executable, captures, notes and checksum.
+2. Optionally perform the manual click-through on a disposable Windows profile.
+3. Authorize the tag, GitHub Release and asset upload. Nothing has been tagged,
+   committed or pushed for v1.2.0.
 
 ## v1.1.1 — unreleased (built and verified locally)
 

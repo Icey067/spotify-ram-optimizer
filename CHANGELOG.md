@@ -4,7 +4,38 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.1.1] — unreleased
+## [1.2.0] — 2026-11-19 (release candidate, not published)
+
+Final release candidate incorporating the Diagnostics and Privacy Center workspaces, twelve-destination navigation, path redaction hardening, version consistency testing, and a unified Windows acceptance suite.
+
+### Added (1.2.0)
+
+- **Diagnostics workspace**: Dedicated diagnostic surface displaying active health findings, grouped by severity (critical, warning, observation, info), with evidence, impact, recommended fix, and redacted markdown report export.
+- **Privacy Center workspace**: Transparent visibility into exactly what Spotify Optimizer reads, modifies, and stores; real paths for configs, backups, logs, and telemetry history; explicit retention periods; and 1-click log and history purge actions.
+- **Twelve-destination navigation**: Unified sidebar structured into Overview, Management, and Application categories with clean `grid_remove` view isolation and lazy loading.
+- **Profile path redaction hardening**: Enhanced `redact_text()` scrubbing Windows (`C:\Users\username`) and POSIX profile paths anywhere within diagnostic exports and activity log displays.
+- **Native Windows acceptance suite**: Comprehensive `scripts/windows_acceptance.ps1` automated release readiness runner.
+- **Version consistency test**: Dedicated automated test (`tests/test_version_consistency.py`) ensuring version uniformity across all code and metadata surfaces.
+- **CLI version argument**: Added `--version` / `-v` flag to `main.py` printing application version.
+
+### Changed (1.2.0)
+
+- Updated application version to `1.2.0` across engine, GUI, metadata, and docs.
+- Updated Win32 PE version resource to `1.2.0.0`.
+- Redacted historical activity log screenshot exposure and updated acceptance suite.
+
+### Validation (1.2.0)
+
+- Native Windows 11 x64 acceptance run: PyInstaller build exit 0; **313 passed,
+  1 skipped, 0 failed** across 23 test modules; source and packaged smoke tests
+  both **11/11, exit 0**.
+- PE metadata: `FileVersion 1.2.0.0`, `ProductVersion 1.2.0`, Company `Icey`;
+  1 embedded icon resource.
+- Executable: **34,373,370 bytes**, SHA-256
+  `f0f8f8cf8a4650d38f95f97506cfd78977709b55c9647959c64d7dc51cf4cd12`.
+- Twelve screenshots regenerated at 1770x1170; activity-log paths redacted.
+
+## [1.1.1] — 2026-11-18
 
 Release polish and validation. No architectural rewrite: this release closes the
 user-facing gaps left by 1.1.0, fixes the start-up regression it introduced, and

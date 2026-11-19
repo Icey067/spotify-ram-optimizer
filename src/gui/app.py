@@ -62,7 +62,7 @@ from .workspace_pages import (
 
 class App(ctk.CTk):
     """Authoritative responsive navigation shell for the Spotify Optimizer."""
-    VERSION = "1.1.1"
+    VERSION = "1.2.0"
 
     def __init__(self) -> None:
         super().__init__()

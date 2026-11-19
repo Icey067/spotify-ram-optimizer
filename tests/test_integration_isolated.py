@@ -1,5 +1,5 @@
 """
-Isolated Windows integration validation (1.1.1).
+Isolated Windows integration validation (1.2.0).
 
 Three clearly separated levels are exercised here, and none of them touches the
 developer's real Spotify profile, registry or cache:

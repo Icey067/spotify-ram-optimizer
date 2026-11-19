@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec for Spotify RAM Optimizer.
+PyInstaller spec for Spotify RAM Optimizer v1.2.0.
 Build with:  pyinstaller spotify_optimizer.spec
 """
 import sys
